@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ドラゴンのす">
+  <meta name="theme-color" content="#fbf1e4">
+  <meta name="format-detection" content="telephone=no">
+  <title>ドラゴンのす</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <style>
+    html, body {
+      margin: 0; height: 100%; overflow: hidden; background: #fbf1e4;
+      -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+    }
+    #wrap {
+      position: fixed; inset: 0;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      display: flex; justify-content: center;
+    }
+    #game { width: 100%; max-width: 520px; height: 100%; display: block; touch-action: none; }
+    #rotate { display: none; }
+    @media (orientation: landscape) and (max-height: 500px) {
+      #rotate {
+        display: flex; position: fixed; inset: 0; z-index: 2; align-items: center; justify-content: center;
+        background: #fbf1e4; color: #4a3b47; font: bold 18px sans-serif;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap"><canvas id="game"></canvas></div>
+  <div id="rotate">スマホを たてにしてね</div>
+  <noscript>JavaScript をオンにしてください</noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
