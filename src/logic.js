@@ -436,7 +436,7 @@ export function generateField(state, locId, rng) {
     const p = place((c) => c.y > lo && c.y < lo + (D - 600) / E.goblins, 220);
     if (!p) continue;
     const gob = pickWeighted(loc.goblins, rng).id;
-    const g = { id: i, goblin: gob, x: p.x, y: p.y, hx: p.x, hy: p.y, noticed: false, done: false };
+    const g = { id: i, goblin: gob, x: p.x, y: p.y, hx: p.x, hy: p.y, noticed: false, done: false, ai: newGoblinAI(rng) };
     f.goblins.push(g);
     const path = pathBack(reach, p, f.start, 9);
     path.forEach((q, k) => f.tracks.push({ x: q.x, y: q.y, ang: q.ang, gob: i, k }));
@@ -514,4 +514,173 @@ function pathBack(reach, from, to, n) {
     }
   }
   return pts;
+}
+
+// ---------- ゴブリンの行動 ----------
+// 状態: patrol（見回り）→ notice（気づく「！」）→ chase（追跡）→ lost（見失う「？」）→ back（戻る）→ patrol
+// 向き ai.yaw は 0 = 右、π/2 = 奥（描くときの向きと同じ）
+const TAU = Math.PI * 2;
+const angDiff = (a, b) => ((a - b + Math.PI) % TAU + TAU) % TAU - Math.PI;
+function turn(a, target, step) {
+  const d = angDiff(target, a);
+  return Math.abs(d) <= step ? target : a + Math.sign(d) * step;
+}
+
+export function newGoblinAI(rng = Math.random) {
+  return { state: 'patrol', t: 0, yaw: rng() * TAU, tx: null, ty: null, wait: rng() * 1.5, unseen: 0, lx: 0, ly: 0, alert: 0, lap: rng() * TAU, moving: false, running: false };
+}
+
+// 茂みのそばにいるか（気づかれにくい）
+export function inBush(f, x, y) {
+  const r = DATA.explore.bushR;
+  return f.bands.some((b) => b.type === 'bush' && y > b.y0 - r && y < b.y1 + r);
+}
+
+// 2点の間に地形の帯（崖・川・茂み）があるか。types を渡すとその種類だけ
+export function bandBetween(f, a, b, types) {
+  const lo = Math.min(a.y, b.y), hi = Math.max(a.y, b.y);
+  return f.bands.some((bd) => (!types || types.includes(bd.type)) && lo < bd.y0 && hi > bd.y1);
+}
+
+// ゴブリンからプレイヤーが見えるか。前の扇形・一定の距離。横や後ろは近くでないと気づかない
+// 走ると気づかれる距離がのび、茂みのそばでは縮む。崖と茂みの向こうは見えない
+export function goblinSees(f, g, p) {
+  const E = DATA.explore;
+  const A = goblinById(g.goblin).ai;
+  const dx = p.x - g.x, dy = p.y - g.y, d = Math.hypot(dx, dy);
+  let range = A.view * (p.running ? E.runK : 1) * (inBush(f, p.x, p.y) ? E.bushK : 1);
+  if (Math.abs(angDiff(Math.atan2(dy, dx), g.ai.yaw)) > A.fov) range *= E.sideK;
+  if (d > range) return false;
+  return !bandBetween(f, g, p, ['cliff', 'bush']);
+}
+
+function goblinMove(f, g, tx, ty, speed, dt, turnRate) {
+  const E = DATA.explore;
+  const dx = tx - g.x, dy = ty - g.y, d = Math.hypot(dx, dy);
+  if (d < 2) { g.ai.moving = false; return true; }
+  g.ai.yaw = turn(g.ai.yaw, Math.atan2(dy, dx), turnRate * dt);
+  // 向きがだいたい合ってから進む（急に横へすべらない）
+  const face = Math.cos(angDiff(Math.atan2(dy, dx), g.ai.yaw));
+  const step = Math.min(d, speed * dt * Math.max(0.15, face));
+  const np = moveCircle(f, g, Math.cos(g.ai.yaw) * step, Math.sin(g.ai.yaw) * step, E.goblinR);
+  const moved = Math.hypot(np.x - g.x, np.y - g.y);
+  g.x = np.x; g.y = np.y;
+  g.ai.moving = moved > speed * dt * 0.1;
+  g.ai.stuck = moved < step * 0.3 ? (g.ai.stuck || 0) + dt : 0;
+  return d < 6;
+}
+
+// 見回り（種類ごとの癖）
+function patrol(f, g, A, dt, rng) {
+  const E = DATA.explore;
+  const ai = g.ai;
+  ai.running = false;
+  if (ai.wait > 0) {
+    ai.wait -= dt;
+    ai.moving = false;
+    // 立ち止まって周りを見る
+    if (A.patrol === 'look' || A.patrol === 'wander') ai.yaw += Math.sin(ai.t * 1.6) * dt * (A.patrol === 'look' ? 1.6 : 0.7);
+    return;
+  }
+  if (A.patrol === 'circle') {
+    ai.lap += dt * (A.walk / (E.patrolR * 0.6));
+    ai.tx = g.hx + Math.cos(ai.lap) * E.patrolR * 0.6;
+    ai.ty = g.hy + Math.sin(ai.lap) * E.patrolR * 0.45;
+    goblinMove(f, g, ai.tx, ai.ty, A.walk * 1.4, dt, 3);
+    return;
+  }
+  if (ai.tx === null || ai.stuck > 0.6) {
+    if (A.patrol === 'pace') {
+      ai.side = -(ai.side || 1);
+      ai.tx = g.hx + ai.side * E.patrolR;
+      ai.ty = g.hy;
+    } else {
+      const a = rng() * TAU, r = E.patrolR * (0.3 + rng() * 0.7);
+      ai.tx = g.hx + Math.cos(a) * r;
+      ai.ty = g.hy + Math.sin(a) * r * 0.7;
+    }
+    ai.stuck = 0;
+  }
+  if (goblinMove(f, g, ai.tx, ai.ty, A.walk, dt, 3)) {
+    ai.tx = null;
+    ai.wait = A.pause * (A.patrol === 'look' ? 1.6 : 0.6 + rng() * 0.8);
+  }
+}
+
+function setState(g, state) { g.ai.state = state; g.ai.t = 0; g.ai.tx = null; }
+
+// フィールドのゴブリンを1歩動かす。player: { x, y, running }
+// 戻り値: contact（触れたゴブリン）、advantage（有利に始められるか）、events（notice / lost / giveup / back）
+export function updateGoblins(f, player, dt, rng = Math.random) {
+  const E = DATA.explore;
+  const events = [];
+  let contact = null, advantage = false;
+  const notice = (g) => {
+    if (g.ai.state === 'notice' || g.ai.state === 'chase') return;
+    setState(g, 'notice');
+    g.ai.lx = player.x; g.ai.ly = player.y;
+    events.push({ g, kind: 'notice' });
+    // 近くの仲間も少し遅れて気づく
+    for (const o of f.goblins) {
+      if (o === g || o.done || o.ai.state === 'notice' || o.ai.state === 'chase' || o.ai.alert > 0) continue;
+      const d = Math.hypot(o.x - g.x, o.y - g.y);
+      if (d < E.alertR) o.ai.alert = 0.5 + d / 500;
+    }
+  };
+  for (const g of f.goblins) {
+    if (g.done) continue;
+    const A = goblinById(g.goblin).ai;
+    const ai = g.ai;
+    ai.t += dt;
+    const sees = goblinSees(f, g, player);
+    const dp = Math.hypot(player.x - g.x, player.y - g.y);
+    const toP = Math.atan2(player.y - g.y, player.x - g.x);
+    if (ai.alert > 0) {
+      ai.alert -= dt;
+      if (ai.alert <= 0) { ai.alert = 0; if (ai.state !== 'notice' && ai.state !== 'chase' && !bandBetween(f, g, player)) notice(g); }
+    }
+    switch (ai.state) {
+      case 'patrol':
+        if (sees) notice(g); else patrol(f, g, A, dt, rng);
+        break;
+      case 'notice':
+        // 「！」を出してプレイヤーの方を向き、短く止まる
+        ai.moving = false;
+        ai.yaw = turn(ai.yaw, toP, 9 * dt);
+        if (ai.t > E.noticePause) setState(g, 'chase');
+        break;
+      case 'chase': {
+        ai.running = true;
+        if (sees) { ai.unseen = 0; ai.lx = player.x; ai.ly = player.y; } else ai.unseen += dt;
+        if (bandBetween(f, g, player) || dp > A.view * E.giveUpK) { setState(g, 'lost'); events.push({ g, kind: 'giveup' }); break; }
+        if (ai.unseen > E.loseTime) { setState(g, 'lost'); events.push({ g, kind: 'lost' }); break; }
+        const tx = sees ? player.x : ai.lx, ty = sees ? player.y : ai.ly;
+        goblinMove(f, g, tx, ty, A.run, dt, 7);
+        break;
+      }
+      case 'lost':
+        // 「？」を出して探す：見失った所へ少し歩き、きょろきょろする
+        ai.running = false;
+        if (sees && !bandBetween(f, g, player)) { notice(g); g.ai.t = E.noticePause * 0.5; break; }
+        if (ai.t < 1.2 && Math.hypot(ai.lx - g.x, ai.ly - g.y) > 8 && !bandBetween(f, g, { x: ai.lx, y: ai.ly })) goblinMove(f, g, ai.lx, ai.ly, A.walk * 1.2, dt, 4);
+        else { ai.moving = false; ai.yaw += Math.sin(ai.t * 2.4) * dt * 2.2; }
+        if (ai.t > E.searchTime) { setState(g, 'back'); events.push({ g, kind: 'back' }); }
+        break;
+      case 'back':
+        ai.running = false;
+        if (sees) { notice(g); break; }
+        if (goblinMove(f, g, g.hx, g.hy, A.walk * 1.2, dt, 3) || ai.t > 12 || ai.stuck > 1.5) { setState(g, 'patrol'); ai.wait = A.pause; }
+        break;
+      default:
+        setState(g, 'patrol');
+    }
+    if (!contact && dp < E.contactR) {
+      contact = g;
+      // 気づかれる前に近づいた・後ろから触れたら有利
+      const unaware = ai.state === 'patrol' || ai.state === 'back' || ai.state === 'lost';
+      const behind = Math.abs(angDiff(Math.atan2(player.y - g.y, player.x - g.x), ai.yaw)) > E.behindAngle;
+      advantage = g.noticed || unaware || behind;
+    }
+  }
+  return { contact, advantage, events };
 }

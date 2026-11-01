@@ -110,7 +110,10 @@ export default function create(input, env) {
       // ドラゴン（卵のまわり）
       team.forEach((d, i) => {
         const ox = geo.x + geo.w * (0.5 + Math.cos(i * 2.1 + 0.5) * 0.17), oy = geo.y + geo.h * (0.6 + Math.sin(i * 2.1 + 0.5) * 0.1);
-        drawDragonAt(ctx, d.genome, ox, oy, 62, { anchor: 'feet', t: t + i, level: d.level, flip: ox > ex });
+        // 一番近いゴブリンの方を向く（いなければ外向き）
+        let tx = ox + (ox > ex ? 1 : -1) * 40, ty = oy, best = Infinity;
+        for (const gb of S.gobs) { if (gb.flee) continue; const gx = geo.x + gb.x * geo.w, gy = geo.y + gb.y * geo.h, dd = Math.hypot(gx - ox, gy - oy); if (dd < best) { best = dd; tx = gx; ty = gy; } }
+        drawDragonAt(ctx, d.genome, ox, oy, 62, { anchor: 'feet', t: t + i, level: d.level, yaw: Math.atan2(-(ty - oy), tx - ox) });
       });
       for (const b of S.bolts) {
         const x = b.x0 + (b.gb.x - b.x0) * b.t, y = b.y0 + (b.gb.y - b.y0) * b.t;
@@ -122,7 +125,9 @@ export default function create(input, env) {
         const sx = geo.x + gb.x * geo.w, sy = geo.y + gb.y * geo.h;
         ctx.save();
         ctx.beginPath(); ctx.rect(geo.x, geo.y, geo.w, geo.h); ctx.clip();
-        drawGoblin(ctx, input.goblin, sx, sy - 40 * 0.46 * input.goblin.look.size, 40, { t: t + gb.id, hurt: gb.hurt > 0, flip: gb.face < 0, egg: gb.flee ? 'forest_common' : null, walking: !(gb.hurt > 0) });
+        // 卵へ向かう（逃げるときは反対へ）
+        const toEgg = Math.atan2(-(ey - sy), ex - sx);
+        drawGoblin(ctx, input.goblin, sx, sy - 40 * 0.46 * input.goblin.look.size, 40, { t: t + gb.id, hurt: gb.hurt > 0, yaw: gb.flee ? toEgg + Math.PI : toEgg, egg: gb.flee ? 'forest_common' : null, walking: !(gb.hurt > 0) });
         ctx.restore();
         if (gb.max > 1 && !gb.flee) for (let k = 0; k < gb.max; k++) { ctx.fillStyle = k < gb.hp ? '#c45a44' : 'rgba(70,56,40,0.3)'; ctx.fillRect(sx - 10 + k * 12, sy - 52, 9, 4); }
       }

@@ -63,7 +63,7 @@ export function createDex(game) {
         grad.addColorStop(1, d ? loc.theme.skyBottom : 'rgba(70,56,40,0.03)');
         panel(ctx, cx0, cy0, cwid, chei, { r: 14, fill: grad });
         const g = d ? genomeOf(st, key) : { ...sp, ...defaultLook(sp, loc.id) };
-        drawDragonAt(ctx, g, x + cw / 2, cy0 + 50, cwid - 16, { t: t + i * 0.37, speed: 0.45, level: d ? d.level : 1, silhouette: !d, shadow: !!d, aspect: 74 / (cwid - 16) });
+        drawDragonAt(ctx, g, x + cw / 2, cy0 + 50, cwid - 16, { cache: `dex:${loc.id}:${i}`, t: t + i * 0.37, speed: 0.45, level: d ? d.level : 1, silhouette: !d, shadow: !!d, aspect: 74 / (cwid - 16) });
         if (d) {
           if (d.shiny) shinySparkles(ctx, x + cw / 2, cy0 + 50, 38, t + i);
           levelBadge(ctx, cx0 + 6, cy0 + 6, d.level);

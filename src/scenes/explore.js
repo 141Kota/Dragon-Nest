@@ -4,11 +4,14 @@ import { W } from '../ui.js';
 import { text, panel, button, rr, drawEgg, iconShard, iconStone, sparkle, shadowEllipse, C, textBox, measure, drawStick, tagOnField } from '../draw.js';
 import { drawGoblin, drawExplorer } from '../figures.js';
 import { drawDragonAt } from '../dragon.js';
-import { generateField, moveCircle, rollEgg, reduceHatch, addEggToStorage, randInt, makeRng, genomeOf } from '../logic.js';
+import { generateField, moveCircle, rollEgg, reduceHatch, addEggToStorage, randInt, makeRng, genomeOf, updateGoblins } from '../logic.js';
+import { turnToward } from '../rig.js';
 import { modalFrame, modalTitle } from './common.js';
 
 const TAU = Math.PI * 2;
 export const BATTLE_ZOOM = 1.28;
+// キャラを見下ろす角度（フィールドの見下ろしに合わせる）
+const PITCH = 0.5;
 
 export { drawExplorer };
 
@@ -34,7 +37,7 @@ export function createExplore(game) {
     for (let i = 0; i < 70; i++) weather.push({ x: rng() * W, y: rng() * 900, v: 0.5 + rng(), p: rng() * TAU });
     S = {
       loc: locId, field, decor, weather, rng,
-      p: { x: field.start.x, y: field.start.y, face: 1, walking: false },
+      p: { x: field.start.x, y: field.start.y, face: 1, yaw: Math.PI / 2, walking: false, running: false },
       cam: { x: field.start.x, y: field.start.y }, zoom: 1, foe: null, actors: null,
       trail: [], bag: [], shards: 0, stones: 0, anchorY: 500,
       t0: game.t, msg: null, summary: false, flash: 0, pending: null, foundTracks: new Set(),
@@ -83,13 +86,19 @@ export function createExplore(game) {
     }
   }
 
-  function startBattle(g) {
+  function startBattle(g, advantage) {
     g.done = true;
     S.foe = g;
+    // おたがいに相手の方を向く
+    g.ai.yaw = Math.atan2(S.p.y - g.y, S.p.x - g.x);
+    S.p.yaw = Math.atan2(g.y - S.p.y, g.x - S.p.x);
     g.face = g.x < S.p.x ? 1 : -1;
     S.p.face = g.x < S.p.x ? -1 : 1;
     S.p.walking = false;
-    S.pending = { goblin: g.goblin, advantage: g.noticed, gid: g.id };
+    S.p.running = false;
+    g.ai.moving = false;
+    g.ai.running = false;
+    S.pending = { goblin: g.goblin, advantage, gid: g.id };
     S.flash = 0.01;
   }
 
@@ -137,13 +146,17 @@ export function createExplore(game) {
     const m = Math.hypot(mx, my);
     if (m > 1) { mx /= m; my /= m; }
     S.p.walking = m > 0.15;
+    S.p.running = m > E.runStick;
     if (S.p.walking) {
       const np = moveCircle(f, S.p, mx * E.speed * dt, -my * E.speed * dt, E.playerR);
       S.p.x = np.x; S.p.y = np.y;
-      if (Math.abs(mx) > 0.2) S.p.face = mx > 0 ? 1 : -1;
+      // 向きは進む方向へなめらかに回る（止まったら直前の向きのまま）
+      S.p.yaw = turnToward(S.p.yaw, Math.atan2(-my, mx), 10 * dt);
+      S.p.face = Math.cos(S.p.yaw) >= 0 ? 1 : -1;
       const last = S.trail[0];
       if (!last || Math.hypot(last.x - S.p.x, last.y - S.p.y) > 4) {
-        S.trail.unshift({ x: S.p.x, y: S.p.y, face: S.p.face });
+        const yaw = last ? Math.atan2(S.p.y - last.y, S.p.x - last.x) : S.p.yaw;
+        S.trail.unshift({ x: S.p.x, y: S.p.y, face: S.p.face, yaw });
         if (S.trail.length > 80) S.trail.pop();
       }
     }
@@ -162,14 +175,16 @@ export function createExplore(game) {
         say(`${goblinById(g.goblin).name}の足跡だ。先に気づいたので有利に戦える`);
       }
     }
-    // ゴブリンはうろうろする。近づくとバトル
-    for (const g of f.goblins) {
-      if (g.done) continue;
-      const a = game.t * 0.6 + g.id * 2;
-      g.x = g.hx + Math.cos(a) * 40;
-      g.y = g.hy + Math.sin(a * 1.3) * 26;
-      g.face = Math.sin(a) < 0 ? 1 : -1;
-      if (Math.hypot(g.x - S.p.x, g.y - S.p.y) < E.goblinNoticeR) { startBattle(g); break; }
+    // ゴブリン：見回り → 気づく → 追跡 → 見失う → 戻る。触れたらバトル
+    const res = updateGoblins(f, S.p, dt, S.rng);
+    for (const ev of res.events) {
+      ev.g.bubble = { kind: ev.kind, t: game.t };
+      if (ev.kind === 'notice' && !S.warned) { S.warned = true; say('気づかれた。走って逃げるか、川や崖の向こうへ行こう'); }
+      if (ev.kind === 'giveup') say('ゴブリンはあきらめた');
+    }
+    if (res.contact) {
+      if (res.advantage && !res.contact.noticed) say('気づかれる前に近づいた。有利に戦える');
+      startBattle(res.contact, res.advantage);
     }
   }
 
@@ -538,6 +553,28 @@ export function createExplore(game) {
     }
   }
 
+  // ゴブリンの頭の上の吹き出し：気づいたら「！」、見失ったら「？」
+  function drawBubble(ctx, g, p, t) {
+    const st = g.ai.state;
+    const mark = st === 'notice' || st === 'chase' ? '！' : st === 'lost' ? '？' : null;
+    if (!mark) return;
+    const age = g.bubble ? t - g.bubble.t : 1;
+    const pop = st === 'notice' ? 1 + Math.max(0, 0.35 - age) * 1.6 : st === 'chase' ? 0.8 : 1;
+    const r = (11 * p.s + 3) * pop;
+    const bx = p.x, by = p.y - 96 * p.s - r;
+    ctx.fillStyle = mark === '！' ? '#c8463a' : '#fbf7ee';
+    ctx.strokeStyle = mark === '！' ? '#7a2a22' : '#6e6252';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, TAU);
+    ctx.moveTo(bx - r * 0.35, by + r * 0.8);
+    ctx.lineTo(bx, by + r * 1.45);
+    ctx.lineTo(bx + r * 0.35, by + r * 0.8);
+    ctx.fill();
+    ctx.stroke();
+    text(ctx, mark, bx, by + 0.5, { size: Math.round(r * 1.25), align: 'center', noHalo: true, color: mark === '！' ? '#fffaf0' : '#3a3026', maxW: r * 2 });
+  }
+
   function drawWorld(ctx, t, dt) {
     const f = S.field;
     const loc = locationById(S.loc);
@@ -576,16 +613,21 @@ export function createExplore(game) {
         const p = proj(g.x, g.y);
         const gob = goblinById(g.goblin);
         const size = 60 * p.s;
-        drawGoblin(ctx, gob, p.x, p.y - 0.46 * size * gob.look.size, size, { t: t + g.id, flip: g.face < 0, walking: !isFoe, pose: isFoe ? A.foePose : undefined });
+        const ai = g.ai;
         if (g.noticed && !isFoe) {
-          ctx.fillStyle = C.gold;
+          // 足跡に先に気づいたゴブリン：足もとに金の輪
+          ctx.strokeStyle = 'rgba(214,170,70,0.85)';
+          ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(p.x, p.y - 80 * p.s, 10 * p.s + 2, 0, TAU);
-          ctx.fill();
-          ctx.fillStyle = '#fffaf0';
-          ctx.fillRect(p.x - 1.5, p.y - 80 * p.s - 6, 3, 8);
-          ctx.fillRect(p.x - 1.5, p.y - 80 * p.s + 4, 3, 3);
+          ctx.ellipse(p.x, p.y, 22 * p.s, 22 * p.s * Math.sin(PITCH), 0, 0, TAU);
+          ctx.stroke();
         }
+        drawGoblin(ctx, gob, p.x, p.y - 0.46 * size * gob.look.size, size, {
+          t: t + g.id, yaw: ai.yaw, pitch: PITCH,
+          walking: !isFoe && ai.moving && !ai.running, running: !isFoe && ai.moving && ai.running,
+          pose: isFoe ? A.foePose : undefined,
+        });
+        if (!isFoe) drawBubble(ctx, g, p, t);
       });
     }
     if (!A.hide) {
@@ -595,10 +637,12 @@ export function createExplore(game) {
         const tp = S.trail[Math.min(S.trail.length - 1, (i + 1) * 9)] || { x: S.p.x - 30 * (i + 1), y: S.p.y - 20, face: S.p.face };
         add(tp.y, () => {
           const p = proj(tp.x, tp.y);
-          drawDragonAt(ctx, genomeOf(game.state, key), p.x, p.y, 64 * p.s, { anchor: 'feet', t: t + i, level: game.state.dex[key].level, flip: (S.foe && (S.flash > 0 || A.showFoe) ? S.p.face : tp.face) < 0, speed: S.p.walking ? 1.6 : 0.7 });
+          const facingFoe = S.foe && (S.flash > 0 || A.showFoe);
+          const yaw = facingFoe ? Math.atan2(S.foe.y - tp.y, S.foe.x - tp.x) : (tp.yaw ?? S.p.yaw);
+          drawDragonAt(ctx, genomeOf(game.state, key), p.x, p.y, 64 * p.s, { anchor: 'feet', t: t + i, level: game.state.dex[key].level, yaw, pitch: PITCH, walking: S.p.walking && !facingFoe, speed: S.p.walking ? 1.3 : 0.7 });
         });
       });
-      add(S.p.y, () => { const p = proj(S.p.x, S.p.y); drawExplorer(ctx, p.x, p.y, p.s * 1.1, t, S.p.walking, S.p.face, A.playerPose); });
+      add(S.p.y, () => { const p = proj(S.p.x, S.p.y); drawExplorer(ctx, p.x, p.y, p.s * 1.1, t, S.p.walking, S.p.face, A.playerPose, S.p.yaw, { pitch: PITCH, running: S.p.running && S.p.walking }); });
     }
     objs.sort((a, b) => b.y - a.y).forEach((o) => o.fn());
     // 手前の層（速く動く草むら）
@@ -644,7 +688,7 @@ export function createExplore(game) {
     ctx.fill();
     const mapY = (y) => my1 - (y / f.d) * (my1 - my0);
     for (const it of f.items) if (!it.taken) { ctx.fillStyle = it.kind === 'nest' ? '#8a6a3a' : it.kind === 'chest' ? C.gold : '#3a8a90'; ctx.fillRect(mx - 2 + (it.x / f.w - 0.5) * 6, mapY(it.y) - 1.5, 3, 3); }
-    for (const g of f.goblins) if (!g.done && g.noticed) { ctx.fillStyle = C.red; ctx.fillRect(mx - 2, mapY(g.y) - 1.5, 4, 3); }
+    for (const g of f.goblins) if (!g.done && (g.noticed || g.ai.state === 'chase')) { ctx.fillStyle = C.red; ctx.fillRect(mx - 2 + (g.x / f.w - 0.5) * 6, mapY(g.y) - 1.5, 4, 3); }
     ctx.fillStyle = C.text;
     ctx.beginPath();
     ctx.arc(mx, mapY(S.p.y), 3.5, 0, TAU);

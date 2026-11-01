@@ -175,12 +175,16 @@ export default function create(input, env) {
       // ゴブリンとプレイヤー（奥から）
       const gp = toScreen(S.g.x, S.g.y), pp = toScreen(S.p.x, S.p.y);
       const drawG = () => {
-        drawGoblin(ctx, input.goblin, gp.x, gp.y - 46 * 0.46 * input.goblin.look.size, 46, { t, egg: 'forest_common', flip: S.g.face < 0, shake: S.g.stun > 0, hurt: S.g.stun > 0, walking: S.g.stun <= 0 });
+        // 逃げる向きを向く（画面の上は奥）
+        if (Math.hypot(S.g.vx, S.g.vy) > 0.02) S.g.yaw = Math.atan2(-S.g.vy, S.g.vx);
+        drawGoblin(ctx, input.goblin, gp.x, gp.y - 46 * 0.46 * input.goblin.look.size, 46, { t, egg: 'forest_common', yaw: S.g.yaw ?? (S.g.face < 0 ? Math.PI : 0), shake: S.g.stun > 0, hurt: S.g.stun > 0, running: S.g.stun <= 0 });
         if (S.g.stun > 0) for (let i = 0; i < 3; i++) { const a = t * 6 + i * 2.1; ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(gp.x + Math.cos(a) * 16, gp.y - 52 + Math.sin(a) * 5, 2.5, 0, TAU); ctx.fill(); }
       };
       const drawP = () => {
-        team.forEach((d, i) => drawDragonAt(ctx, d.genome, pp.x - S.p.face * (26 + i * 18), pp.y - 4 - i * 6, 42, { anchor: 'feet', t: t + i, level: d.level, flip: S.p.face < 0, speed: 1.5 }));
-        drawExplorer(ctx, pp.x, pp.y, 0.9, t, !!S.moving, S.p.face);
+        // プレイヤーとドラゴンはゴブリンの方を向く
+        const yaw = Math.atan2(-(gp.y - pp.y), gp.x - pp.x);
+        team.forEach((d, i) => drawDragonAt(ctx, d.genome, pp.x - S.p.face * (26 + i * 18), pp.y - 4 - i * 6, 42, { anchor: 'feet', t: t + i, level: d.level, yaw, walking: !!S.moving, speed: 1.2 }));
+        drawExplorer(ctx, pp.x, pp.y, 0.9, t, !!S.moving, S.p.face, undefined, yaw);
       };
       if (gp.y < pp.y) { drawG(); drawP(); } else { drawP(); drawG(); }
       for (const f of S.fx) {

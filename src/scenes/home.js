@@ -3,6 +3,7 @@ import { DATA, facilityById } from '../data.js';
 import { W } from '../ui.js';
 import { text, panel, button, rr, drawEgg, drawNest, drawFacility, bar, formatTime, iconStone, rarityStars, sparkle, C, textBox } from '../draw.js';
 import { drawDragonAt } from '../dragon.js';
+import { turnToward } from '../rig.js';
 import { nestStatus, placeEgg, useStone, hatchNest, facilityLevel, facilityCost, upgradeFacility, genomeOf, eggSlots } from '../logic.js';
 import { drawTopBar, drawNav, modalFrame, closeButton, modalTitle, dragonDetail, hintBubble, NAV_H, TOP_H, tag } from './common.js';
 
@@ -26,7 +27,7 @@ export function createHome(game) {
     const keys = Object.keys(st.dex)
       .sort((a, b) => st.team.includes(b) - st.team.includes(a) || st.dex[b].level - st.dex[a].level || st.dex[b].at - st.dex[a].at)
       .slice(0, 4);
-    walkers = keys.map((k, i) => walkers.find((w) => w.key === k) || { key: k, u: WANDER[i][0], v: WANDER[i][1], tu: WANDER[i][0], tv: WANDER[i][1], wait: Math.random() * 3, flip: false });
+    walkers = keys.map((k, i) => walkers.find((w) => w.key === k) || { key: k, u: WANDER[i][0], v: WANDER[i][1], tu: WANDER[i][0], tv: WANDER[i][1], wait: Math.random() * 3, flip: false, yaw: -0.5 - Math.random() * 0.5 });
   }
 
   function updateWalkers(dt) {
@@ -45,6 +46,8 @@ export function createHome(game) {
       w.u += (du / dist) * sp;
       w.v += (dv / dist) * sp;
       if (Math.abs(du) > 0.005) w.flip = du < 0;
+      // 歩く方向へなめらかに向きを変える（画面の上は奥）
+      w.yaw = turnToward(w.yaw ?? 0, Math.atan2(-dv, du), dt * 2.5);
     }
   }
 
@@ -300,7 +303,7 @@ export function createHome(game) {
         if (!d) continue;
         const g = genomeOf(st, w.key);
         items.push({ y: p.y, draw: () => {
-          drawDragonAt(ctx, g, p.x, p.y, 92, { anchor: 'feet', t: t + w.u * 7, level: d.level, flip: w.flip, speed: w.wait > 0 ? 0.6 : 1.4 });
+          drawDragonAt(ctx, g, p.x, p.y, 92, { cache: `home:${w.key}`, anchor: 'feet', t: t + w.u * 7, level: d.level, yaw: w.yaw, pitch: 0.45, walking: w.wait <= 0, speed: w.wait > 0 ? 0.6 : 1 });
           if (st.team.includes(w.key)) sparkle(ctx, p.x, p.y - 74 + Math.sin(t * 3) * 2, 5, C.gold, t);
           game.ui.hit(p.x - 40, p.y - 70, 80, 70, () => { modal = { type: 'dragon', key: w.key }; });
         } });

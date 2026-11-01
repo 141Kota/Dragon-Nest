@@ -206,7 +206,8 @@ export function dragonDetail(game, key, o = {}) {
   stageBack(ctx, loc, box.x + pad, y, box.w - pad * 2, stageH);
   const reveal = o.reveal == null ? 1 : o.reveal;
   const pop = reveal < 1 ? 0.6 + 0.4 * reveal : 1;
-  drawDragonAt(ctx, g, W / 2, y + stageH / 2 + 4, Math.min(260, box.w - 80) * pop, { t, level: d.level, speed: 0.55, aspect: (stageH - 24) / Math.min(260, box.w - 80) });
+  // 図鑑の大きな絵は、ゆっくり向きを変えて360°を見せる
+  drawDragonAt(ctx, g, W / 2, y + stageH / 2 + 4, Math.min(260, box.w - 80) * pop, { t, level: d.level, speed: 0.55, yaw: -0.42 + Math.sin(t * 0.35) * 1.1, aspect: (stageH - 24) / Math.min(260, box.w - 80) });
   if (reveal < 1) {
     ctx.save();
     ctx.globalAlpha = 1 - reveal;
@@ -259,7 +260,7 @@ export function teamStrip(game, x, y, w, h, o = {}) {
     panel(ctx, cx + 3, y, cw - 6, h, { r: 12, shadow: false, fill: key ? 'rgba(255,255,255,0.55)' : 'rgba(70,56,40,0.07)' });
     if (key && st.dex[key]) {
       const g = genomeOf(st, key);
-      drawDragonAt(ctx, g, cx + cw / 2, y + h / 2, cw - 20, { t: game.t * 0.7 + i, level: st.dex[key].level, shadow: false, aspect: (h - 12) / (cw - 20) });
+      drawDragonAt(ctx, g, cx + cw / 2, y + h / 2, cw - 20, { cache: `team:${i}`, t: game.t * 0.7 + i, level: st.dex[key].level, shadow: false, aspect: (h - 12) / (cw - 20) });
     } else {
       text(ctx, '空き', cx + cw / 2, y + h / 2, { size: 12, align: 'center', color: C.dim });
     }

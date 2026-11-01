@@ -20,12 +20,15 @@ export const DATA = {
   ],
 
   // ---------- ドラゴンの系統（骨組み） ----------
-  // 右向きのローカル座標。地面は y=70。点は [x, y, 半径]。
+  // 横から見た右向きの座標で書く（地面は y=70。点は [x, y, 半径]）。描くときは 3D（前後・左右・高さ）に起こし、
+  // 脚・腕・翼は左右に振り分け、向きに合わせて回して投影する。脚は far: false のものを左右の対で使う。
   // chains の各点列は根元→先端。parts は同じ系統の接続点（wing / spine / heads）に合わせて描かれる。
+  // motion: 歩き方と待機の動き（slither くねる / stride 歩幅のある歩き / spread 翼を広げる / stomp 二足で踏む / sway 首を揺らす / drift 漂う）
   lineages: [
     {
       id: 'serpent', name: '蛇型', word: 'ヘビ竜', skill: '巻きつき', base: { pow: 2, spd: 3, dex: 4, wit: 2 },
       skeleton: {
+        motion: 'slither',
         tail: { pts: [[-30, 58, 16], [-70, 62, 12], [-100, 52, 8], [-112, 34, 4]], sway: 6 },
         body: { pts: [[-30, 58, 17], [0, 64, 18], [30, 52, 17], [36, 22, 15], [18, -4, 14]] },
         necks: [{ pts: [[18, -4, 14], [12, -30, 12], [32, -52, 11]], sway: 4, head: { r: 17, snout: 14, ang: 0.15 } }],
@@ -37,6 +40,7 @@ export const DATA = {
     {
       id: 'quad', name: '四足型', word: '地竜', skill: '体当たり', base: { pow: 4, spd: 3, dex: 2, wit: 2 },
       skeleton: {
+        motion: 'stride',
         tail: { pts: [[-36, 20, 16], [-72, 30, 11], [-104, 46, 6], [-122, 40, 3]], sway: 8 },
         body: { pts: [[-38, 20, 27], [-6, 14, 30], [26, 14, 26]] },
         necks: [{ pts: [[26, 10, 18], [46, -14, 14], [56, -32, 12]], sway: 3, head: { r: 19, snout: 13, ang: 0.1 } }],
@@ -53,6 +57,7 @@ export const DATA = {
     {
       id: 'wyvern', name: '翼竜型', word: '翼竜', skill: '急降下', base: { pow: 3, spd: 4, dex: 2, wit: 2 },
       skeleton: {
+        motion: 'spread',
         tail: { pts: [[-16, 18, 12], [-56, 26, 8], [-96, 22, 5], [-128, 8, 2]], sway: 10 },
         body: { pts: [[-16, 18, 18], [6, 4, 19], [20, -12, 15]] },
         necks: [{ pts: [[20, -12, 11], [40, -40, 9], [58, -52, 8]], sway: 4, head: { r: 14, snout: 18, ang: 0.25 } }],
@@ -67,6 +72,7 @@ export const DATA = {
     {
       id: 'biped', name: '二足型', word: '立ち竜', skill: '岩投げ', base: { pow: 3, spd: 2, dex: 3, wit: 3 },
       skeleton: {
+        motion: 'stomp',
         tail: { pts: [[-14, 46, 18], [-52, 60, 13], [-90, 66, 8], [-118, 64, 3]], sway: 5 },
         body: { pts: [[-8, 46, 25], [0, 14, 24], [8, -16, 19]] },
         necks: [{ pts: [[8, -16, 15], [16, -36, 14], [26, -50, 13]], sway: 2, head: { r: 21, snout: 12, ang: 0.05 } }],
@@ -82,6 +88,7 @@ export const DATA = {
     {
       id: 'hydra', name: '多頭型', word: '三つ首竜', skill: '三つの息', base: { pow: 4, spd: 1, dex: 2, wit: 4 },
       skeleton: {
+        motion: 'sway',
         tail: { pts: [[-40, 32, 18], [-72, 44, 11], [-98, 54, 5]], sway: 5 },
         body: { pts: [[-40, 32, 30], [-6, 26, 34], [24, 28, 28]] },
         necks: [
@@ -102,6 +109,7 @@ export const DATA = {
     {
       id: 'wisp', name: '浮遊型', word: '浮き竜', skill: '霧まとい', base: { pow: 1, spd: 3, dex: 3, wit: 4 },
       skeleton: {
+        motion: 'drift',
         float: 8,
         tail: { pts: [[-18, 6, 13], [-50, 0, 9], [-78, -18, 6], [-100, -10, 3], [-112, 8, 2]], sway: 12 },
         body: { pts: [[-18, 6, 24], [4, 2, 27]] },
@@ -288,10 +296,13 @@ export const DATA = {
 
   // ---------- ゴブリン ----------
   // battles: 使うバトルと重み、quirk はバトル内の癖（各バトルのファイルが読む）
+  // ai: フィールドでの行動。patrol は見回りの癖（wander うろうろ / pace 行ったり来たり / circle 巣のまわりを回る /
+  //     look 立ち止まって周りを見る）、walk・run は歩く・走る速さ（プレイヤーは150）、view は気づく距離、fov は前の視界の半分の角度
   goblins: [
     {
       id: 'sneak', name: '足の速いゴブリン',
       look: { build: 'slim', skin: '#86a05e', skinDark: '#4f6538', cloth: '#5a4a6a', legs: '#4e4438', size: 0.92, ear: 1.25, hood: true, gear: 'sack' },
+      ai: { patrol: 'wander', walk: 46, run: 172, view: 210, fov: 1.0, pause: 0.7 },
       battles: [
         { id: 'chase', w: 4, quirk: { speed: 1.15, jink: 1.4 } },
         { id: 'trap', w: 2, quirk: { size: 3, scramble: 3 } },
@@ -303,6 +314,7 @@ export const DATA = {
     {
       id: 'brute', name: '斧持ちゴブリン',
       look: { build: 'broad', skin: '#93a04e', skinDark: '#5d6632', cloth: '#7e4430', legs: '#4a3a2e', size: 1.12, ear: 0.95, hood: false, gear: 'club' },
+      ai: { patrol: 'pace', walk: 32, run: 124, view: 185, fov: 0.85, pause: 1.3 },
       battles: [
         { id: 'chase', w: 1, quirk: { speed: 0.9, jink: 0.6 } },
         { id: 'trap', w: 2, quirk: { size: 3, scramble: 4 } },
@@ -314,6 +326,7 @@ export const DATA = {
     {
       id: 'shaman', name: '罠師ゴブリン',
       look: { build: 'robe', skin: '#76927e', skinDark: '#44604f', cloth: '#45567a', legs: '#3e4450', size: 0.96, ear: 1.4, hood: true, gear: 'drum' },
+      ai: { patrol: 'circle', walk: 36, run: 136, view: 235, fov: 1.15, pause: 0.5 },
       battles: [
         { id: 'chase', w: 1, quirk: { speed: 1.0, jink: 2.0 } },
         { id: 'trap', w: 3, quirk: { size: 4, scramble: 4 } },
@@ -325,6 +338,7 @@ export const DATA = {
     {
       id: 'shield', name: '盾持ちゴブリン',
       look: { build: 'stocky', skin: '#8a9a62', skinDark: '#56643a', cloth: '#6a5a44', legs: '#4a4034', size: 1.02, ear: 1.05, hood: false, gear: 'shield' },
+      ai: { patrol: 'look', walk: 30, run: 116, view: 200, fov: 1.2, pause: 1.6 },
       battles: [
         { id: 'chase', w: 1, quirk: { speed: 0.85, jink: 0.8 } },
         { id: 'trap', w: 2, quirk: { size: 3, scramble: 5 } },
@@ -360,7 +374,21 @@ export const DATA = {
     springs: 1,
     goblins: 3,
     obstacles: 34,
-    goblinNoticeR: 70, // ゴブリンに出くわす距離
+    // ゴブリンの行動（見回り → 気づく → 追跡 → 見失う → 戻る）
+    contactR: 34, // 触れたらバトル
+    goblinR: 14,
+    patrolR: 90, // 見回りの範囲（家からの距離）
+    runStick: 0.75, // スティックをこれ以上倒すと走る
+    runK: 1.4, // 走っていると気づかれる距離がのびる
+    bushK: 0.5, // 茂みのそばでは縮む
+    bushR: 45,
+    sideK: 0.32, // 横や後ろは見えにくい（気づく距離にかける）
+    noticePause: 0.6, // 気づいてから走り出すまで
+    loseTime: 1.4, // 見えなくなってから見失うまで
+    searchTime: 3.0, // 「？」で探す時間
+    giveUpK: 1.8, // 追跡中、気づく距離のこの倍だけ離れるとあきらめる
+    alertR: 320, // 1体が気づくと、この距離にいる仲間も少し遅れて気づく
+    behindAngle: 1.9, // 後ろから触れたとみなす角度
     trackR: 34, // 足跡に気づく距離
     springReduceSec: 120,
     chestShards: [2, 4],

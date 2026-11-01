@@ -74,7 +74,7 @@ export function createSelect(game) {
       const g = genomeOf(st, k);
       const idx = st.team.indexOf(k);
       panel(ctx, x + 4, y + 4, cw - 8, ch - 8, { r: 12, fill: idx >= 0 ? 'rgba(168,117,31,0.14)' : 'rgba(70,56,40,0.05)', shadow: false, stroke: idx >= 0 ? C.gold : undefined });
-      drawDragonAt(ctx, g, x + cw / 2, y + 50, cw - 28, { t: t * 0.6 + i, level: d.level, shadow: false, aspect: 64 / (cw - 28) });
+      drawDragonAt(ctx, g, x + cw / 2, y + 50, cw - 28, { cache: `sel:${k}`, t: t * 0.6 + i, level: d.level, shadow: false, aspect: 64 / (cw - 28) });
       levelBadge(ctx, x + cw / 2 - 24, y + ch - 40, d.level);
       if (idx >= 0) {
         ctx.fillStyle = C.gold;
