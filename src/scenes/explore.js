@@ -6,6 +6,7 @@ import { drawGoblin, drawExplorer } from '../figures.js';
 import { drawDragonAt } from '../dragon.js';
 import { generateField, moveCircle, rollEgg, reduceHatch, addEggToStorage, randInt, makeRng, genomeOf, updateGoblins } from '../logic.js';
 import { turnToward } from '../rig.js';
+import { drawStatic } from '../sprites.js';
 import { modalFrame, modalTitle } from './common.js';
 
 const TAU = Math.PI * 2;
@@ -17,6 +18,7 @@ export { drawExplorer };
 
 export function createExplore(game) {
   let S = null;
+  const G = {}; // 作っておいたグラデーション
 
   // ---------- 投影（奥ほど小さく、上に） ----------
   // zoom はバトルのときにカメラだけ少し寄るのに使う
@@ -176,7 +178,7 @@ export function createExplore(game) {
       }
     }
     // ゴブリン：見回り → 気づく → 追跡 → 見失う → 戻る。触れたらバトル
-    const res = updateGoblins(f, S.p, dt, S.rng);
+    const res = updateGoblins(f, S.p, dt, S.rng, { r: 720, max: 6 });
     for (const ev of res.events) {
       ev.g.bubble = { kind: ev.kind, t: game.t };
       if (ev.kind === 'notice' && !S.warned) { S.warned = true; say('気づかれた。走って逃げるか、川や崖の向こうへ行こう'); }
@@ -192,10 +194,14 @@ export function createExplore(game) {
   function drawBackground(ctx, theme, t) {
     const H = game.ui.H;
     const hz = proj(S.cam.x, S.cam.y + 1150).y;
-    const sky = ctx.createLinearGradient(0, 0, 0, hz + 20);
-    sky.addColorStop(0, theme.skyTop);
-    sky.addColorStop(1, theme.skyBottom);
-    ctx.fillStyle = sky;
+    const skyKey = `${S.loc}|${Math.round(hz)}`;
+    if (!G.sky || G.skyKey !== skyKey) {
+      G.sky = ctx.createLinearGradient(0, 0, 0, hz + 20);
+      G.sky.addColorStop(0, theme.skyTop);
+      G.sky.addColorStop(1, theme.skyBottom);
+      G.skyKey = skyKey;
+    }
+    ctx.fillStyle = G.sky;
     ctx.fillRect(0, 0, W, H);
     // 奥の層（ゆっくり動く）
     const farX = -S.cam.x * 0.12;
@@ -217,11 +223,16 @@ export function createExplore(game) {
       ctx.beginPath();
       ctx.moveTo(vx - 120, hz); ctx.lineTo(vx - 24, hz - 120); ctx.lineTo(vx + 24, hz - 120); ctx.lineTo(vx + 120, hz);
       ctx.fill();
-      const gl = ctx.createRadialGradient(vx, hz - 120, 2, vx, hz - 120, 40);
-      gl.addColorStop(0, 'rgba(255,120,50,0.7)');
-      gl.addColorStop(1, 'rgba(255,120,50,0)');
-      ctx.fillStyle = gl;
-      ctx.fillRect(vx - 40, hz - 160, 80, 80);
+      if (!G.lava) {
+        G.lava = ctx.createRadialGradient(0, 0, 2, 0, 0, 40);
+        G.lava.addColorStop(0, 'rgba(255,120,50,0.7)');
+        G.lava.addColorStop(1, 'rgba(255,120,50,0)');
+      }
+      ctx.save();
+      ctx.translate(vx, hz - 120);
+      ctx.fillStyle = G.lava;
+      ctx.fillRect(-40, -40, 80, 80);
+      ctx.restore();
     }
     if (S.loc === 'sea') {
       ctx.fillStyle = '#7aa4bc';
@@ -282,7 +293,7 @@ export function createExplore(game) {
       const p = proj(d.x, d.y);
       if (p.x < -20 || p.x > W + 20) continue;
       if (d.kind === 'tuft') {
-        ctx.strokeStyle = shadeMix(theme.ground, '#ffffff', 0.15 + d.k * 0.1);
+        ctx.strokeStyle = shadeMix(theme.ground, '#ffffff', 0.15 + Math.round(d.k * 4) * 0.025);
         ctx.lineWidth = 1.5 * p.s;
         ctx.beginPath();
         for (let k = -1; k <= 1; k++) { ctx.moveTo(p.x + k * 3 * p.s, p.y); ctx.lineTo(p.x + k * 5 * p.s, p.y - (7 + d.k * 4) * p.s); }
@@ -299,11 +310,11 @@ export function createExplore(game) {
       if (b.y1 < y0 || b.y0 > y1) continue;
       if (b.type === 'river') {
         quad(ctx, -800, b.y0, f.w + 800, b.y1);
-        const pa = proj(0, b.y1), pb = proj(0, b.y0);
-        const g = ctx.createLinearGradient(0, pa.y, 0, pb.y);
-        g.addColorStop(0, shadeMix(theme.water, '#000000', 0.18));
-        g.addColorStop(1, theme.water);
-        ctx.fillStyle = g;
+        // 奥ほど暗い水（グラデーションは作らず、2段の平らな色で）
+        ctx.fillStyle = theme.water;
+        ctx.fill();
+        quad(ctx, -800, (b.y0 + b.y1) / 2, f.w + 800, b.y1);
+        ctx.fillStyle = 'rgba(20,30,40,0.12)';
         ctx.fill();
         ctx.strokeStyle = S.loc === 'volcano' ? 'rgba(255,220,150,0.55)' : 'rgba(255,255,255,0.45)';
         ctx.lineWidth = 1.5;
@@ -360,17 +371,27 @@ export function createExplore(game) {
     }
   }
 
+  // 色の文字列は毎フレーム作らない（覚えておく）
+  const mixMemo = new Map();
   function shadeMix(a, b, k) {
+    const key = a + b + k;
+    let v = mixMemo.get(key);
+    if (v === undefined) { v = shadeMix0(a, b, k); mixMemo.set(key, v); }
+    return v;
+  }
+  function shadeMix0(a, b, k) {
     const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
     const ch = (s) => Math.round(((pa >> s) & 255) * (1 - k) + ((pb >> s) & 255) * k);
     return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
   }
 
+  // 木・岩・茂みは、形と大きさの段ごとに1回だけ描いて保存し、貼るだけにする
   function drawObstacle(ctx, theme, o, p) {
-    const s = p.s * (o.r / 26);
+    const v = Math.round(o.v * 4) / 4;
+    drawStatic(ctx, p.x, p.y, `ob|${S.loc}|${v}`, [-42, -136, 42, 16], p.s * (o.r / 26), (c) => drawObstacle0(c, theme, { v }));
+  }
+  function drawObstacle0(ctx, theme, o) {
     ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.scale(s, s);
     shadowEllipse(ctx, 4, 2, 30, 9, 0.35);
     ctx.lineJoin = 'round';
     if (theme.obstacle === 'tree') {
@@ -426,9 +447,10 @@ export function createExplore(game) {
   }
 
   function drawBush(ctx, theme, p, v) {
+    drawStatic(ctx, p.x, p.y, `bush|${S.loc}|${v}`, [-42, -48, 42, 14], p.s, (c) => drawBush0(c, theme, v));
+  }
+  function drawBush0(ctx, theme, v) {
     ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.scale(p.s, p.s);
     shadowEllipse(ctx, 0, 2, 30, 8, 0.35);
     for (const [ox, oy, r, dark] of [[-16, -12, 18, 1], [14, -12, 18, 1], [0, -22, 20, 0], [-10, -8, 14, 0], [12, -6, 13, 0]]) {
       ctx.fillStyle = dark ? shadeMix(theme.bush, '#000000', 0.22) : theme.bush;
@@ -449,11 +471,12 @@ export function createExplore(game) {
     for (const [x0, x1] of xs) {
       const a = proj(x0, b.y0), c = proj(x1, b.y0);
       const h = 34 * a.s;
-      const g = ctx.createLinearGradient(0, a.y - h, 0, a.y);
-      g.addColorStop(0, shadeMix(theme.cliff, '#ffffff', 0.1));
-      g.addColorStop(1, shadeMix(theme.cliff, '#000000', 0.3));
-      ctx.fillStyle = g;
-      ctx.fillRect(a.x, a.y - h, c.x - a.x, h);
+      ctx.fillStyle = shadeMix(theme.cliff, '#ffffff', 0.1);
+      ctx.fillRect(a.x, a.y - h, c.x - a.x, h * 0.4);
+      ctx.fillStyle = shadeMix(theme.cliff, '#000000', 0.15);
+      ctx.fillRect(a.x, a.y - h * 0.6, c.x - a.x, h * 0.35);
+      ctx.fillStyle = shadeMix(theme.cliff, '#000000', 0.3);
+      ctx.fillRect(a.x, a.y - h * 0.25, c.x - a.x, h * 0.25);
       ctx.strokeStyle = 'rgba(40,30,20,0.25)';
       ctx.lineWidth = 1;
       for (let k = Math.ceil(x0 / 30) * 30; k < x1; k += 30) {
@@ -498,20 +521,24 @@ export function createExplore(game) {
       ctx.beginPath();
       ctx.ellipse(0, -2, 34, 13, 0, 0, TAU);
       ctx.fill();
-      const g = ctx.createRadialGradient(-6, -6, 2, 0, -2, 28);
-      g.addColorStop(0, '#9fd0d0');
-      g.addColorStop(1, '#3f7f88');
-      ctx.fillStyle = g;
+      if (!G.spring) {
+        G.spring = ctx.createRadialGradient(-6, -6, 2, 0, -2, 28);
+        G.spring.addColorStop(0, '#9fd0d0');
+        G.spring.addColorStop(1, '#3f7f88');
+      }
+      ctx.fillStyle = G.spring;
       ctx.beginPath();
       ctx.ellipse(0, -3, 27, 9, 0, 0, TAU);
       ctx.fill();
       for (let i = 0; i < 3; i++) {
         const k = (t * 0.5 + i / 3) % 1;
-        ctx.fillStyle = `rgba(230,240,240,${0.35 * (1 - k)})`;
+        ctx.globalAlpha = 0.35 * (1 - k);
+        ctx.fillStyle = '#e6f0f0';
         ctx.beginPath();
         ctx.arc(-10 + i * 10, -10 - k * 30, 6 + k * 6, 0, TAU);
         ctx.fill();
       }
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }
@@ -545,10 +572,13 @@ export function createExplore(game) {
     }
     if (kind === 'leaves') {
       // 霧
-      const g = ctx.createLinearGradient(0, 0, 0, H * 0.5);
-      g.addColorStop(0, 'rgba(200,220,210,0)');
-      g.addColorStop(1, 'rgba(240,248,244,0.18)');
-      ctx.fillStyle = g;
+      if (!G.fog || G.fogH !== H) {
+        G.fog = ctx.createLinearGradient(0, 0, 0, H * 0.5);
+        G.fog.addColorStop(0, 'rgba(200,220,210,0)');
+        G.fog.addColorStop(1, 'rgba(240,248,244,0.18)');
+        G.fogH = H;
+      }
+      ctx.fillStyle = G.fog;
       ctx.fillRect(0, 0, W, H * 0.5);
     }
   }

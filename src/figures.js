@@ -3,6 +3,7 @@
 // 向き（yaw）に合わせて回して投影し、部品（脚・胴・腕・頭・耳・外套・道具）を奥にあるものから描く。
 // 動き: 立ち（息）・歩き・走り・勝利・失敗。頭・耳・外套は体の動きに少し遅れて追従する。
 import { drawEgg } from './draw.js';
+import { drawSprite, dirOf, yawOfDir, frameOf, devScale } from './sprites.js';
 import {
   TAU, mix, hexA, lineOf, at, sub, norm, frame, view, smooth3, beadPolys, projChain, projPoly, meanD, circle3, capPoly,
   ellipsePoly, toPath, bbox, capPath, fillCap, look, inside, fillPoly, strokePts, unitPx, offscreen, screenSize, drawPieces, paintBody, groundShadow,
@@ -11,7 +12,7 @@ import {
 
 // 体格（頭身は全員そろえる：頭の半径 12 前後・全体の高さ 100 前後）
 const BUILDS = {
-  player: { torso: 27, hipR: 8.5, waistR: 8, chestR: 10, shoulder: 1, thigh: 21, shin: 21, upper: 15, fore: 14, limbR: 1, headR: 12, hunch: 0.04, neck: 6 },
+  player: { torso: 27, hipR: 8.5, waistR: 8, chestR: 10, shoulder: 1, thigh: 21, shin: 21, upper: 15, fore: 14, limbR: 1, headR: 13.5, hunch: 0.04, neck: 4 },
   slim: { torso: 25, hipR: 7, waistR: 6, chestR: 8.5, shoulder: 0.9, thigh: 22, shin: 23, upper: 16, fore: 15, limbR: 0.85, headR: 12, hunch: 0.26, neck: 5 },
   broad: { torso: 28, hipR: 10, waistR: 10, chestR: 14, shoulder: 1.3, thigh: 19, shin: 19, upper: 16, fore: 16, limbR: 1.3, headR: 12.5, hunch: 0.32, neck: 5 },
   stocky: { torso: 24, hipR: 10, waistR: 9.5, chestR: 11.5, shoulder: 1.15, thigh: 17, shin: 17, upper: 14, fore: 13, limbR: 1.15, headR: 12, hunch: 0.18, neck: 4 },
@@ -20,11 +21,14 @@ const BUILDS = {
 
 // 姿勢（角度は真下が0、前が＋）。pose は idle / walk / run / win / lose
 // legR/legL・armR/armL は右（Y-）と左（Y+）
+// 動きはすべて1周（cyc = tt × RATE）の整数倍の速さにして、ループするコマとして事前描画できるようにする
+export const POSE_RATE = { idle: 2, walk: 9, run: 13, win: 10, lose: 1.5 };
 function posture(pose, tt, B) {
-  const P = { lean: B.hunch, lift: 0, head: 0, legR: [0.05, -0.06], legL: [-0.06, -0.04], armR: [0.12, 0.3], armL: [-0.08, 0.25], ph: 0, swing: 0, look: 0 };
+  const cyc = tt * (POSE_RATE[pose] || 2);
+  const P = { lean: B.hunch, lift: 0, head: 0, legR: [0.05, -0.06], legL: [-0.06, -0.04], armR: [0.12, 0.3], armL: [-0.08, 0.25], ph: 0, swing: 0, look: 0, cyc };
   if (pose === 'walk' || pose === 'run') {
     const run = pose === 'run';
-    const ph = tt * (run ? 13 : 9);
+    const ph = cyc;
     const A = run ? 0.85 : 0.55;
     P.ph = ph;
     P.legR = [Math.sin(ph) * A, -0.1 - Math.max(0, Math.sin(ph + 1.7)) * (run ? 1.5 : 0.85)];
@@ -36,17 +40,17 @@ function posture(pose, tt, B) {
     P.head = Math.sin(ph * 2 - 0.8) * 0.03 - (run ? 0.12 : 0);
     P.swing = Math.sin(ph - 0.9) * (run ? 1.4 : 1);
   } else if (pose === 'win') {
-    const hop = Math.abs(Math.sin(tt * 5));
+    const hop = Math.abs(Math.sin(cyc / 2));
     P.lift = -hop * 8;
     P.lean = B.hunch * 0.3 - 0.06;
-    P.armR = [Math.PI - 0.55 + Math.sin(tt * 10) * 0.12, 0.2];
-    P.armL = [Math.PI - 0.8 + Math.sin(tt * 10 + 1) * 0.12, 0.2];
+    P.armR = [Math.PI - 0.55 + Math.sin(cyc) * 0.12, 0.2];
+    P.armL = [Math.PI - 0.8 + Math.sin(cyc + 1) * 0.12, 0.2];
     P.legR = [0.15 * hop, -0.4 * hop];
     P.legL = [-0.1 * hop, -0.3 * hop];
     P.head = -0.12;
     P.swing = -hop;
   } else if (pose === 'lose') {
-    const s = Math.sin(tt * 1.5);
+    const s = Math.sin(cyc);
     P.lean = B.hunch + 0.42 + s * 0.02;
     P.head = 0.38;
     P.armR = [0.4, 0.1];
@@ -55,14 +59,13 @@ function posture(pose, tt, B) {
     P.legL = [0.3, -0.7];
     P.swing = 0.3;
   } else {
-    const br = Math.sin(tt * 2);
+    const br = Math.sin(cyc);
     P.lift = br * 0.6;
     P.lean = B.hunch + br * 0.012;
     P.armR = [0.12 + br * 0.03, 0.3];
     P.armL = [-0.06 - br * 0.03, 0.26];
-    P.head = Math.sin(tt * 2 - 0.7) * 0.025;
-    P.swing = Math.sin(tt * 1.3) * 0.2;
-    P.look = Math.sin(tt * 0.6) * 0.25;
+    P.head = Math.sin(cyc - 0.7) * 0.025;
+    P.swing = Math.sin(cyc - 0.5) * 0.2;
   }
   return P;
 }
@@ -102,7 +105,7 @@ const legChain = (Lg, r0, r1) => smooth3([[...Lg.base, r0], [...Lg.knee, (r0 + r
 const footChain = (Lg, len, r) => [[...Lg.end, r], [...at(Lg.end, [1, 0, 0], len * 0.45, [0, 0, 1], -r * 0.15), r * 0.95], [...at(Lg.end, [1, 0, 0], len * 0.85, [0, 0, 1], -r * 0.25), r * 0.75]];
 
 // 共通の人型を描く。lk: 色と体格、extras: 種類ごとの部品
-function drawFigure(ctx, x, y, scale, face, o, lk, extras) {
+function drawFigureLive(ctx, x, y, scale, face, o, lk, extras) {
   const B = BUILDS[lk.build] || BUILDS.player;
   const t = o.t || 0;
   const pose = o.pose || (o.running ? 'run' : o.walking ? 'walk' : 'idle');
@@ -111,7 +114,7 @@ function drawFigure(ctx, x, y, scale, face, o, lk, extras) {
   if (offscreen(ctx, x, y - 50 * scale, 90 * scale)) return;
   const V = view(o.yaw ?? (face < 0 ? Math.PI + 0.35 : -0.35), o.pitch ?? 0.32);
   ctx.save();
-  ctx.translate(x + (o.shake ? Math.sin(t * 60) * 3 : 0), y);
+  ctx.translate(x, y);
   ctx.scale(scale, scale);
   const lw = LINE_PX * unitPx(ctx);
   const lod = screenSize(ctx, 100) < 40 ? 'low' : 'high';
@@ -147,7 +150,7 @@ function drawFigure(ctx, x, y, scale, face, o, lk, extras) {
   const H = K.head;
   const headParts = extras.head ? extras.head({ K, B, P, t, V }) : { beads: [[[...H.C, B.headR]], [[...at(H.C, H.F.f, B.headR * 0.15, H.F.u, -B.headR * 0.45), B.headR * 0.62]]] };
   const headPolys = headParts.beads.flatMap((ch) => beadPolys(pj(ch.length > 1 ? smooth3(ch, 2) : ch)));
-  const head = piece('head', headPolys, V.p(H.C).d, lk.skin, { beads: headParts.beads.flat() });
+  const head = piece('head', headPolys, V.p(H.C).d, lk.skin, { beads: headParts.beads.flat(), flat: !!headParts.flat });
   jAt(torso, head, K.neckTop, B.neck + 3);
 
   const ctxF = { ctx, K, B, P, t, lw, lk, o, V, pj, piece, jAt, head, torso, pieces, lod };
@@ -157,7 +160,7 @@ function drawFigure(ctx, x, y, scale, face, o, lk, extras) {
     const c = V.p(ep);
     piece('egg', [ellipsePoly(c.x, c.y, 8, 10, 0, 12)], c.d - 4, '#ffffff', {
       own: true, noLine: true,
-      paint() { drawEgg(ctx, o.egg, c.x, c.y, 20, { shadow: false, wobble: Math.sin(t * 6) * 0.08 }); },
+      paint() { drawEgg(ctx, o.egg, c.x, c.y, 20, { shadow: false, wobble: Math.sin(P.cyc) * 0.08 }); },
     });
   }
 
@@ -169,7 +172,8 @@ function drawFigure(ctx, x, y, scale, face, o, lk, extras) {
   const lookOf = (c) => { if (!looks.has(c)) looks.set(c, look(ctx, bb, c, mix(c, '#ffffff', 0.32), mix(c, '#16120e', 0.5))); return looks.get(c); };
   for (const p of pieces) {
     if (p.own) continue;
-    const L = lookOf(p.color);
+    // flat: 明るく平らな色（プレイヤーの顔。グラデーションや陰を入れない）
+    const L = p.flat ? { ...lookOf(p.color), fill: p.color } : lookOf(p.color);
     p.line = L.line;
     p.paint = (c, me, patch) => paintBody(c, me, L, union, lw, () => {
       if (me.boot) { c.fillStyle = lookOf(lk.boots).fill; c.fill(toPath(me.boot)); }
@@ -196,6 +200,28 @@ function drawFigure(ctx, x, y, scale, face, o, lk, extras) {
   }
   drawPieces(ctx, pieces, joints, lw);
   ctx.restore();
+}
+
+// 事前描画して貼る（性能）。向き16方向 × 動きのコマ8つを、必要になったときに1回だけ描く
+// o.live: その場で描く（1体だけ大きく映すときなど）
+const BOX = [-88, -168, 88, 30];
+const FADE_POSES = { idle: 1, lose: 1 };
+function drawFigure(ctx, x, y, scale, face, o, lk, extras, id) {
+  if (o.shake) x += Math.sin((o.t || 0) * 60) * 3;
+  if (o.live || typeof document === 'undefined') { drawFigureLive(ctx, x, y, scale, face, o, lk, extras); return; }
+  if (offscreen(ctx, x, y - 50 * scale, 100 * scale)) return;
+  const pose = o.pose || (o.running ? 'run' : o.walking ? 'walk' : 'idle');
+  const yaw = o.yaw ?? (face < 0 ? Math.PI + 0.35 : -0.35);
+  const dir = dirOf(yaw);
+  const n = 8;
+  const fr = frameOf((o.t || 0) * (o.speed || 1), POSE_RATE[pose] || 2, n);
+  const pitch = o.pitch ?? 0.32;
+  drawSprite(ctx, x, y, {
+    base: `${id}|${pose}|${o.egg || ''}|${o.hurt ? 1 : 0}|${pitch}`,
+    dir, frame: fr.i, n, k: devScale(ctx), box: BOX, unit: scale,
+    fade: FADE_POSES[pose] ? fr.frac : 0,
+    render: (c, fi) => drawFigureLive(c, 0, 0, 1, face, { ...o, pose, t: fr.tOf(fi), speed: 1, yaw: yawOfDir(dir), pitch, shake: false }, lk, extras),
+  });
 }
 
 // 腰のベルト・胸当てなど：体の表面の輪（見えている側だけ）
@@ -234,44 +260,76 @@ function backCloth(ctxF, color, hemDrop, jag, widthK = 1) {
   return p;
 }
 
-// ---------- プレイヤー（ドラゴンを連れる冒険者：外套・革の装備・道具袋） ----------
-const PLAYER = { build: 'player', skin: '#e6c4a0', cloth: '#8a6440', sleeve: '#7a5a3a', legs: '#5e5650', boots: '#4e3a2c', cloak: '#3f6a72', hair: '#5a3a26', bag: '#a07a4a' };
+// ---------- プレイヤー（ドラゴンを連れる冒険者：外套とフード・革の装備・道具袋） ----------
+// 顔は人らしくやさしく：大きめの丸い頭（約3.7頭身）、光の点の入った大きめの黒目、細い眉、小さな鼻、小さな弧の口。
+// 肌は明るい平らな色（目のまわりに影やグラデーションを入れない）で、頬にうっすら赤み
+const PLAYER = { build: 'player', skin: '#f2d2b4', cloth: '#8a6440', sleeve: '#7a5a3a', legs: '#5e5650', boots: '#4e3a2c', cloak: '#3f6a72', hair: '#6a4430', bag: '#a07a4a', eye: '#3a2a22', brow: '#5a3a28', mouth: '#a8604e' };
+
+// 頭の球の上の、向き dir を中心にした楕円（横 rx・縦 ry。単位は向きの長さ）を投影した点
+function facePts(V, H, R, dir, rx, ry, n = 12) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU;
+    const d = norm(at(dir, H.F.l, Math.cos(a) * rx, H.F.u, Math.sin(a) * ry));
+    const q = V.p(at(H.C, d, R));
+    out.push([q.x, q.y]);
+  }
+  return out;
+}
+const faceDir = (H, f, u, l) => norm(at([0, 0, 0], H.F.f, f, H.F.u, u, H.F.l, l));
 
 export function drawExplorer(ctx, x, y, s, t, walking, face = 1, pose, yaw, o = {}) {
   drawFigure(ctx, x, y, s * 0.6, face, { t, walking, pose, yaw, ...o }, PLAYER, {
     head({ K, B }) {
-      const H = K.head;
-      return { beads: [[[...H.C, B.headR]], [[...at(H.C, H.F.f, B.headR * 0.18, H.F.u, -B.headR * 0.42), B.headR * 0.66]]] };
+      const H = K.head, R = B.headR;
+      // 丸い頭と、少し前に出たあご。鼻は小さな玉（横から見ると少しだけ出る）
+      return {
+        beads: [
+          [[...H.C, R]],
+          [[...at(H.C, H.F.f, R * 0.16, H.F.u, -R * 0.3), R * 0.74]],
+          [[...at(H.C, H.F.f, R * 0.95, H.F.u, -R * 0.14), R * 0.15]],
+        ],
+        flat: true,
+      };
     },
     more(F) {
-      const { K, B, V, piece, jAt, head, torso, pj } = F;
+      const { K, B, V, piece, jAt, head, torso, pj, P } = F;
       backCloth(F, PLAYER.cloak, 16, false);
+      const H = K.head, R = B.headR;
+      // フード（首の後ろにたまる）
+      const h0 = at(K.neckBase, [1, 0, 0], -B.chestR * 0.6, [0, 0, 1], 2.5);
+      const hood = [[...h0, 7], [...at(h0, [1, 0, 0], -2.5 - P.swing * 0.8, [0, 0, 1], -6), 5.5]];
+      const hp = piece('hood', beadPolys(pj(smooth3(hood, 2))), meanD(V, hood) + 1.2, PLAYER.cloak);
+      jAt(torso, hp, h0, 6);
       // 道具袋（腰の後ろ・左）
       const bagC = [K.hip[0] - B.hipR * 0.8, B.hipR * 0.7, K.hip[2] + 1];
       const bag = piece('bag', beadPolys(pj([[...bagC, 6.5]])), V.p(bagC).d, PLAYER.bag);
       jAt(torso, bag, bagC, 5);
-      // 髪（頭にかぶさり、顔の所だけあく）
-      const H = K.head;
-      const hc = at(H.C, H.F.f, -B.headR * 0.12, H.F.u, B.headR * 0.12);
-      const R = B.headR * 1.06;
-      const open = norm(at(H.F.f, H.F.u, -0.35));
-      const hair = piece('hair', beadPolys(pj([[...hc, R], [...at(hc, H.F.f, -R * 0.35, H.F.u, -R * 0.45), R * 0.7]])), V.p(H.C).d - 0.3, PLAYER.hair, {
+      // 耳（横から見える）
+      for (const sd of [1, -1]) {
+        const ec = at(H.C, H.F.l, sd * R * 0.93, H.F.u, -R * 0.12, H.F.f, -R * 0.05);
+        // 真横に近いときだけ髪の上に見せる（ほかの向きでは髪の下からのぞく程度）
+        const side = V.facing(H.F.l.map((v) => v * sd));
+        const ear = piece('ear', beadPolys(pj([[...ec, R * 0.17]])), side > 0.85 ? V.p(H.C).d - 0.5 : V.p(H.C).d - 0.1, PLAYER.skin, { flat: true });
+        jAt(head, ear, ec, R * 0.16);
+      }
+      // 髪（短めでまとまった形。頭にかぶさり、顔の所だけあく。てっぺんに小さな房）
+      const hc = at(H.C, H.F.f, -R * 0.1, H.F.u, R * 0.1);
+      const HR = R * 1.07;
+      const open = norm(at(H.F.f, H.F.u, -0.62));
+      const tuft = [[...at(hc, H.F.u, HR * 0.75, H.F.f, -HR * 0.2), 3.2], [...at(hc, H.F.u, HR * 1.05, H.F.f, -HR * 0.45), 1.8], [...at(hc, H.F.u, HR * 1.0, H.F.f, -HR * 0.8), 0.5]];
+      piece('hair', [
+        ...beadPolys(pj([[...hc, HR], [...at(hc, H.F.f, -HR * 0.3, H.F.u, -HR * 0.42), HR * 0.74]])),
+        ...beadPolys(pj(smooth3(tuft, 2))),
+      ], V.p(H.C).d - 0.3, PLAYER.hair, {
         extra(c) {
-          const op = capPoly(V, hc, R, open, 0.22, 26);
+          // 顔の所だけあける（生えぎわは眉より上。前髪は横に流れるゆるい波）
+          const op = capPoly(V, hc, HR, open, 0.36, 30);
           if (!op) return;
-          fillCap(c, op, mix(PLAYER.hair, '#16120e', 0.3));
+          fillCap(c, op, mix(PLAYER.hair, '#16120e', 0.25));
           inside(c, capPath(op), () => head.paint(c, head));
-          // 前髪
-          const fr = [];
-          for (let i = 0; i <= 8; i++) {
-            const u = i / 8 - 0.5;
-            const d = norm(at(open, H.F.u, 1.3 - Math.abs(Math.sin(u * 9)) * 0.12, H.F.l, u * 1.6));
-            if (V.facing(d) > -0.05) { const q = V.p(at(hc, d, R)); fr.push([q.x, q.y]); }
-          }
-          strokePts(c, fr, PLAYER.hair, B.headR * 0.16);
         },
       });
-      void hair;
     },
     body({ ctx: c, K, B, V, lw }) {
       // 革の胸当て・ベルト・肩ひも
@@ -286,34 +344,74 @@ export function drawExplorer(ctx, x, y, s, t, walking, face = 1, pose, yaw, o = 
         const p = [K.waist[0] + (K.chest[0] - K.waist[0]) * (1 - u), 0, K.waist[2] + (K.neckBase[2] - K.waist[2]) * (1 - u)];
         const r = B.waistR + (B.chestR - B.waistR) * (1 - u);
         const a = -1.1 + u * 2.2;
-        for (const side of [1]) {
-          const nrm = norm([Math.cos(a) * side, Math.sin(a), 0]);
-          if (V.facing(nrm) > 0) { const q = V.p(at(p, nrm, r * 1.02)); strap.push([q.x, q.y]); }
-        }
+        const nrm = norm([Math.cos(a), Math.sin(a), 0]);
+        if (V.facing(nrm) > 0) { const q = V.p(at(p, nrm, r * 1.02)); strap.push([q.x, q.y]); }
       }
       strokePts(c, strap, '#5a4028', lw * 1.6);
     },
-    face({ ctx: c, K, B, V, lw, P }) {
-      const H = K.head;
-      const R = B.headR;
-      const down = P.head > 0.2;
-      for (const s of [1, -1]) {
-        const e = norm(at([0, 0, 0], H.F.f, 0.95, H.F.u, 0.02, H.F.l, s * 0.42));
-        if (V.facing(e) < 0.05) continue;
-        const eye = capPoly(V, H.C, R * 1.01, e, down ? 0.997 : 0.988, 12);
-        if (eye) fillPoly(c, eye, '#2a1e16');
-        const ch = capPoly(V, H.C, R * 1.01, norm(at(e, H.F.u, -0.35, H.F.l, s * 0.12)), 0.985, 10);
-        if (ch) fillPoly(c, ch, 'rgba(200,110,90,0.32)');
+    face({ ctx: c, K, B, V, lw, P, o: opts }) {
+      const H = K.head, R = B.headR * 1.005;
+      const small = screenSize(c, B.headR * 2) < 15;
+      const sad = (opts.pose === 'lose');
+      const happy = (opts.pose === 'win');
+      for (const sd of [1, -1]) {
+        const e = faceDir(H, 0.93, 0.02, sd * 0.36);
+        const fc = V.facing(e);
+        if (fc < 0.08) continue;
+        if (small) {
+          // 小さいときは目を点にする（口は省略）
+          const q = V.p(at(H.C, e, R));
+          c.fillStyle = PLAYER.eye;
+          c.beginPath(); c.arc(q.x, q.y, B.headR * 0.11, 0, TAU); c.fill();
+          continue;
+        }
+        // 頬の赤み
+        fillPoly(c, facePts(V, H, R, faceDir(H, 0.86, -0.22, sd * 0.5), 0.13, 0.08, 10), 'rgba(232,128,116,0.26)');
+        // 目（大きめの黒目と、左上の光の点）
+        const ey = sad ? 0.1 : happy ? 0.12 : 0.16;
+        const pts = facePts(V, H, R, e, 0.115, ey, 14);
+        fillPoly(c, pts, PLAYER.eye);
+        if (!happy) {
+          let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+          for (const [px, py] of pts) { if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
+          const w = x1 - x0, h = y1 - y0;
+          c.fillStyle = '#ffffff';
+          c.beginPath(); c.arc(x0 + w * 0.34, y0 + h * 0.32, Math.max(0.35, Math.min(w, h) * 0.24), 0, TAU); c.fill();
+          c.fillStyle = 'rgba(255,255,255,0.7)';
+          c.beginPath(); c.arc(x0 + w * 0.66, y0 + h * 0.7, Math.max(0.2, Math.min(w, h) * 0.1), 0, TAU); c.fill();
+        } else {
+          // 笑った目（上向きの弧）
+          c.fillStyle = PLAYER.skin;
+          fillPoly(c, facePts(V, H, R, at(e, H.F.u, -0.05), 0.12, 0.1, 12), PLAYER.skin);
+        }
+        // 細い眉（困ったときは内側が上がる）
+        const br = [];
+        for (let i = 0; i <= 4; i++) {
+          const u = i / 4;
+          const d = faceDir(H, 0.94, 0.2 + Math.sin(u * Math.PI) * 0.03 + (sad ? (1 - u) * 0.05 : 0), sd * (0.24 + u * 0.24));
+          if (V.facing(d) > 0) { const q = V.p(at(H.C, d, R)); br.push([q.x, q.y]); }
+        }
+        strokePts(c, br, PLAYER.brow, lw * 1.1);
       }
+      if (small) return;
+      // 小さな鼻（正面では短い陰の線だけ）
+      const nd = faceDir(H, 1, -0.1, 0);
+      if (V.facing(nd) > 0.3) {
+        const a = V.p(at(H.C, faceDir(H, 1, -0.05, 0.03), R * 1.03)), b = V.p(at(H.C, faceDir(H, 1, -0.13, 0.05), R * 1.03));
+        strokePts(c, [[a.x, a.y], [b.x, b.y]], 'rgba(170,110,90,0.55)', lw * 0.8);
+      }
+      // 小さな弧の口
       const m = [];
-      for (let i = 0; i <= 4; i++) {
-        const u = i / 4 - 0.5;
-        const d = norm(at([0, 0, 0], H.F.f, 1, H.F.u, -0.45 + (P.lift < -4 ? -Math.cos(u * Math.PI) * 0.05 : 0), H.F.l, u * 0.32));
-        if (V.facing(d) > 0) { const q = V.p(at(H.C, d, R * 1.0)); m.push([q.x, q.y]); }
+      const curve = sad ? -0.035 : happy ? 0.06 : 0.035;
+      for (let i = 0; i <= 6; i++) {
+        const u = i / 6 - 0.5;
+        const d = faceDir(H, 1, -0.33 - Math.cos(u * Math.PI) * curve, u * 0.2);
+        if (V.facing(d) > 0) { const q = V.p(at(H.C, d, R)); m.push([q.x, q.y]); }
       }
-      strokePts(c, m, '#7a4a36', lw * 0.8);
+      strokePts(c, m, PLAYER.mouth, lw * 0.95);
+      void P;
     },
-  });
+  }, 'player');
 }
 
 // ---------- ゴブリン ----------
@@ -343,7 +441,7 @@ export function drawGoblin(ctx, gob, x, y, size, o = {}) {
       const H = K.head, r = B.headR;
       // 耳（頭の動きに遅れて揺れる）
       const ear = L.ear || 1;
-      const flick = Math.sin(tt * 2 - 1.1) * 0.08 + P.swing * 0.06;
+      const flick = Math.sin(P.cyc - 1.1) * 0.08 + P.swing * 0.06;
       for (const side of [1, -1]) {
         const E = 27 * ear;
         const bt = at(H.C, H.F.l, side * r * 0.78, H.F.u, r * 0.32, H.F.f, -r * 0.1);
@@ -403,7 +501,7 @@ export function drawGoblin(ctx, gob, x, y, size, o = {}) {
       const hand = aR.end;
       if (gear === 'club' && !F.o.egg) {
         // 斧：柄は前上がりに持ち、刃は前へ
-        const ax = norm([0.42 + Math.sin(tt * 3) * 0.04, -0.05, 0.9]);
+        const ax = norm([0.42 + Math.sin(P.cyc) * 0.04, -0.05, 0.9]);
         const top = at(hand, ax, 40);
         const handle = [[...at(hand, ax, -10), 2.2], [...top, 2.4]];
         const bl = [at(top, ax, 0), ...quad3(top, at(top, [1, 0, 0], 17, ax, -6), at(top, [1, 0, 0], 20, ax, -20), 5), ...quad3(at(top, [1, 0, 0], 20, ax, -20), at(top, [1, 0, 0], 13, ax, -24), at(top, ax, -14), 4)];
@@ -423,7 +521,7 @@ export function drawGoblin(ctx, gob, x, y, size, o = {}) {
         piece('staff', beadPolys(pj(st)), meanD(V, st) - 0.2, '#7a5a3a');
         const sk = at(hand, [0, 0, 1], 39);
         piece('skull', beadPolys(pj([[...sk, 5.2], [...at(sk, [1, 0, 0], 4, [0, 0, 1], -1.5), 3.6]])), V.p(sk).d - 0.3, '#e0d6c0');
-        const fp = [at(sk, [0, 0, 1], -4), at(sk, [-1, 0, 0], 11, [0, 0, 1], 3 + Math.sin(tt * 3) * 2), at(sk, [-1, 0, 0], 2, [0, 0, 1], -1)];
+        const fp = [at(sk, [0, 0, 1], -4), at(sk, [-1, 0, 0], 11, [0, 0, 1], 3 + Math.sin(F.P.cyc) * 2), at(sk, [-1, 0, 0], 2, [0, 0, 1], -1)];
         piece('feather', [projPoly(V, fp)], meanD(V, fp), '#4f7a8a');
         if (!F.o.egg) {
           // 腰の太鼓（太鼓バトルで鳴らす）
@@ -525,7 +623,7 @@ export function drawGoblin(ctx, gob, x, y, size, o = {}) {
       c.fillStyle = '#f2ead8';
       for (const q of fang) { c.beginPath(); c.moveTo(q.x - 1.3, q.y); c.lineTo(q.x, q.y - 3.4); c.lineTo(q.x + 1.3, q.y - 0.3); c.closePath(); c.fill(); }
     },
-  });
+  }, `goblin:${gob.id}`);
 }
 
 const lerpP = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];

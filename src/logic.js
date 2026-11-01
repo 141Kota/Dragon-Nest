@@ -611,7 +611,8 @@ function setState(g, state) { g.ai.state = state; g.ai.t = 0; g.ai.tx = null; }
 
 // フィールドのゴブリンを1歩動かす。player: { x, y, running }
 // 戻り値: contact（触れたゴブリン）、advantage（有利に始められるか）、events（notice / lost / giveup / back）
-export function updateGoblins(f, player, dt, rng = Math.random) {
+// near: { r, max } を渡すと、プレイヤーの近くの数体だけを動かす（性能。探索画面で使う）
+export function updateGoblins(f, player, dt, rng = Math.random, nearOnly = null) {
   const E = DATA.explore;
   const events = [];
   let contact = null, advantage = false;
@@ -627,8 +628,14 @@ export function updateGoblins(f, player, dt, rng = Math.random) {
       if (d < E.alertR) o.ai.alert = 0.5 + d / 500;
     }
   };
-  for (const g of f.goblins) {
-    if (g.done) continue;
+  // 性能：動かすのは、プレイヤーの近く（画面の周囲）の数体だけ。追跡中のものは離れても動かす
+  const activeR = nearOnly ? nearOnly.r : Infinity, activeMax = nearOnly ? nearOnly.max : Infinity;
+  let near = 0;
+  const order = f.goblins.filter((g) => !g.done).map((g) => ({ g, d: Math.hypot(player.x - g.x, player.y - g.y) })).sort((a, b) => a.d - b.d);
+  for (const { g, d } of order) {
+    const busy = g.ai.state === 'chase' || g.ai.state === 'notice' || g.ai.state === 'lost' || g.ai.state === 'back';
+    if (!busy && (d > activeR || near >= activeMax)) continue;
+    near++;
     const A = goblinById(g.goblin).ai;
     const ai = g.ai;
     ai.t += dt;

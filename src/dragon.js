@@ -6,6 +6,7 @@
 // - 動きは骨組みから作る：息で胴が上下し、首としっぽは根元から先へ遅れて追従し、翼は付け根から先へ遅れて動く
 // - 系統ごとに歩き方と待機の動きを変える（data.js の skeleton.motion）
 import { part, lineageById } from './data.js';
+import { drawSprite, dirOf, yawOfDir, frameOf, devScale } from './sprites.js';
 import {
   TAU, mix, hexA, lineOf, add, sub, mul, dot, cross, norm, len, at, lerp3, frame, view, smooth3, beadPolys, projChain, projPoly, meanD,
   circle3, capPoly, ellipsePoly, toPath, bbox, look, inside, fillPoly, strokePts, rootToTip, lag, unitPx, offscreen, screenSize,
@@ -79,33 +80,33 @@ function animateSpine(B, tt, k, walk, motion) {
   const { raw3, tailEnd, bodyEnd, sk } = B;
   const n = raw3.length;
   const tailAmp = (sk.tail.sway || 6) * k, neckAmp = (sk.necks[B.main].sway || 3) * k;
-  const breath = (u) => Math.sin(u * 2) * 1.4 * k;
-  const ph = tt * 7.5;
+  const breath = (u) => Math.sin(u * fq(2)) * 1.4 * k;
+  const ph = tt * fq(7.5);
   return raw3.map(([x, y, z, r], i) => {
     let X = x, Y = y, Z = z, R = r;
     if (i <= tailEnd) {
       const j = tailEnd - i, f = j / Math.max(1, tailEnd);
-      Y += lag(tt, j, 1.2, 0.6) * tailAmp * 0.9 * Math.pow(f, 1.2) * (walk ? 1.6 : 1);
-      Z += breath(tt - j * 0.18) * (1 - f * 0.4) + lag(tt, j, 1.6, 0.75) * tailAmp * 0.35 * Math.pow(f, 1.3);
+      Y += lag(tt, j, fq(1.2), 0.6) * tailAmp * 0.9 * Math.pow(f, 1.2) * (walk ? 1.6 : 1);
+      Z += breath(tt - j * 0.18) * (1 - f * 0.4) + lag(tt, j, fq(1.6), 0.75) * tailAmp * 0.35 * Math.pow(f, 1.3);
     } else if (i <= bodyEnd) {
       Z += breath(tt);
-      R *= 1 + Math.sin(tt * 2) * 0.03 * k;
+      R *= 1 + Math.sin(tt * fq(2)) * 0.03 * k;
     } else {
       const j = i - bodyEnd, f = j / Math.max(1, n - 1 - bodyEnd);
-      Z += breath(tt - j * 0.2) + lag(tt, j, 1.1, 0.7) * neckAmp * f;
-      X += lag(tt, j, 0.9, 0.6) * neckAmp * 0.5 * f;
-      Y += Math.sin(tt * 0.5 - j * 0.3) * neckAmp * 0.5 * f * k;
+      Z += breath(tt - j * 0.2) + lag(tt, j, fq(1.1), 0.7) * neckAmp * f;
+      X += lag(tt, j, fq(0.9), 0.6) * neckAmp * 0.5 * f;
+      Y += Math.sin(tt * fq(0.5) - j * 0.3) * neckAmp * 0.5 * f * k;
     }
     const u = i / (n - 1);
     if (motion === 'slither') {
       // 体全体がくねる（進むときは大きく）
       const amp = (walk ? 9 : 3.5) * k * (0.35 + 0.65 * Math.sin(u * Math.PI));
-      Y += Math.sin(tt * (walk ? 6 : 1.4) - u * 7) * amp;
+      Y += Math.sin(tt * fq(walk ? 6 : 1.4) - u * 7) * amp;
     } else if (walk && (motion === 'stride' || motion === 'stomp' || motion === 'sway')) {
       Z += Math.abs(Math.cos(ph)) * (motion === 'stomp' ? 2.4 : 1.4) * k;
       if (motion === 'stomp') Y += Math.sin(ph) * 1.6 * k * (1 - Math.abs(u - 0.5));
     } else if (motion === 'drift') {
-      Y += Math.sin(tt * 0.9 - u * 3) * 2.5 * k;
+      Y += Math.sin(tt * fq(0.9) - u * 3) * 2.5 * k;
     }
     return [X, Y, Z, R];
   });
@@ -149,7 +150,7 @@ function rig(g, tt, k, walk) {
   const anim = animateSpine(B, tt, k, walk, motion);
   const spine = smooth3(anim, PER);
   const cx = B.cx;
-  const lookYaw = Math.sin(tt * 0.45 + q.phase) * 0.22 * k;
+  const lookYaw = Math.sin(tt * fq(0.45) + q.phase) * 0.22 * k;
   const necks = sk.necks.map((n, idx) => {
     if (idx === B.main) {
       const ch = spine.slice(B.bodyEnd * PER);
@@ -161,13 +162,13 @@ function rig(g, tt, k, walk) {
     const pts = n.pts.map(([x, y, r], j) => {
       const f = j / Math.max(1, m);
       const p = to3(cx, x, y, r);
-      return [p[0] + anc.delta[0] + lag(tt, j, 0.9, 0.6 + idx) * (n.sway || 3) * 0.5 * f * k, side * 15 * f + anc.delta[1], p[2] + anc.delta[2] + lag(tt + idx * 1.7, j, 1.1, 0.7) * (n.sway || 3) * f * k, r];
+      return [p[0] + anc.delta[0] + lag(tt, j, fq(0.9), 0.6 + idx) * (n.sway || 3) * 0.5 * f * k, side * 15 * f + anc.delta[1], p[2] + anc.delta[2] + lag(tt + idx * 1.7, j, fq(1.1), 0.7) * (n.sway || 3) * f * k, r];
     });
     const ch = smooth3(pts, PER);
     return { main: false, ch, side, root: ch[0], head: headOf(ch[ch.length - 1], ch[Math.max(0, ch.length - 5)], n.head, lookYaw + side * 0.35, q) };
   });
   // 脚：腰は背骨にくっつき、足は地面に残る。歩くときは歩幅をとって交互に出す
-  const ph = tt * 7.5;
+  const ph = tt * fq(7.5);
   const legs = [];
   (sk.legs || []).filter((L) => !L.far).forEach((L, li) => {
     const anc = anchorOf(B, anim, L.hip[0], L.hip[1]);
@@ -182,7 +183,7 @@ function rig(g, tt, k, walk) {
         const p = ph + (motion === 'stride' || motion === 'sway' ? li * Math.PI : 0) + (side > 0 ? Math.PI : 0);
         foot = [foot[0] + Math.cos(p) * L.w * 0.75 * k, foot[1], foot[2] + Math.max(0, Math.sin(p)) * L.w * 0.65 * k];
       } else if (fl) {
-        foot = add(foot, [Math.sin(tt * 1.7 + side) * 2 * k, 0, anc.delta[2] * 0.8]);
+        foot = add(foot, [Math.sin(tt * fq(1.7) + side) * 2 * k, 0, anc.delta[2] * 0.8]);
       }
       const knee = add(lerp3(hip, foot, 0.5), kneeOff);
       legs.push({ side, w: L.w, hip, knee, foot, li });
@@ -194,7 +195,7 @@ function rig(g, tt, k, walk) {
     for (const side of [1, -1]) {
       const lat = anc.r * 0.62 * side;
       const sh = add(to3(cx, A.hip[0], A.hip[1], 0, lat), anc.delta);
-      const sw = (walk ? Math.sin(ph + (side > 0 ? 0 : Math.PI)) * 5 : Math.sin(tt * 2 - 0.6) * 0.8) * k;
+      const sw = (walk ? Math.sin(ph + (side > 0 ? 0 : Math.PI)) * 5 : Math.sin(tt * fq(2) - 0.6) * 0.8) * k;
       const elbow = add(to3(cx, A.knee[0], A.knee[1], 0, lat * 1.15), [anc.delta[0] + sw * 0.5, 0, anc.delta[2] * 0.9]);
       const hand = add(to3(cx, A.foot[0], A.foot[1], 0, lat * 1.05), [anc.delta[0] + sw, 0, anc.delta[2] * 0.8]);
       arms.push({ side, w: A.w, hip: sh, knee: elbow, foot: hand });
@@ -335,8 +336,8 @@ function wingGeom(w, root, side, scale, tt, k, motion, walk, nick) {
   const st = w.style;
   const spread = motion === 'spread';
   const flap = (spread ? 0.3 : 0.13) * (walk ? 1.5 : 1) * k;
-  const a1 = (spread ? 0.55 : 1.0) + lag(tt, 0, spread ? 2.6 : 2.2, 0) * flap;
-  const a2 = a1 + 0.22 + lag(tt, 1, spread ? 2.6 : 2.2, 0.8) * flap * 0.9;
+  const a1 = (spread ? 0.55 : 1.0) + lag(tt, 0, fq(spread ? 2.6 : 2.2), 0) * flap;
+  const a2 = a1 + 0.22 + lag(tt, 1, fq(spread ? 2.6 : 2.2), 0.8) * flap * 0.9;
   const S1 = [0, side * Math.cos(a1), Math.sin(a1)], S2 = [0, side * Math.cos(a2), Math.sin(a2)];
   const BK = norm([-1, 0, 0.12]);
   const span = (st.span || 60) * scale;
@@ -428,8 +429,12 @@ export function dragonBounds(g, pitch = 0.3) {
 
 // (x, y) を中心に、幅 size・高さ size*aspect の箱に収めて描く。anchor:'feet' なら y は足もと
 // opts.yaw: 向き（0 = 右、π/2 = 奥、-π/2 = 手前）。なければ flip から斜め前向きに
-// opts.cache: 同時にたくさん映る画面（図鑑・拠点など）で使う。絵を小さな画像にしておき、動きは1秒に12回だけ描き直す
-const sprites = new Map();
+// 性能のため、ふだんは向き16方向 × 動きのコマごとに事前描画した絵を貼る（sprites.js）。
+// 事前描画では動きの速さを1周の整数倍にそろえ（fq）、コマがループするようにする。opts.live: その場で描く
+let LOOP = 0, OMEGA = 0;
+const fq = (f) => (OMEGA ? Math.round(f / OMEGA) * OMEGA : f);
+const LOOPS = { walk: { omega: 3.75, n: 16, fade: false }, idle: { omega: 1.1, n: 24, fade: true } };
+
 export function drawDragonAt(ctx, g, x, y, size, opts = {}) {
   const pitch = opts.pitch ?? 0.3;
   const b = dragonBounds(g, pitch);
@@ -437,43 +442,35 @@ export function drawDragonAt(ctx, g, x, y, size, opts = {}) {
   const aspect = opts.aspect || 0.85;
   const s = Math.min(size / (b.w * lvK), (size * aspect) / (b.h * lvK));
   if (offscreen(ctx, x, y, size)) return s;
-  if (opts.cache && typeof document !== 'undefined') {
-    const m = ctx.getTransform();
-    const k = Math.hypot(m.a, m.b);
-    const bw = size * 1.5, bh = size * Math.max(aspect, 0.6) * 1.9;
-    const feet = opts.anchor === 'feet';
-    const ox = bw / 2, oy = feet ? bh * 0.86 : bh / 2;
-    const key = `${opts.cache}`;
-    const sig = [g.lineage, g.horns, g.wings, g.tail, g.fins, g.pattern, g.ornament, g.color, g.shiny, opts.silhouette, opts.level, Math.round(size), Math.round(k * 100)].join('|');
-    let sp = sprites.get(key);
-    const t = opts.t || 0;
-    if (!sp || sp.sig !== sig || Math.abs(t - sp.t) > 1 / 12 || (opts.yaw !== undefined && Math.abs((opts.yaw - sp.yaw + Math.PI * 3) % TAU - Math.PI) > 0.12)) {
-      if (!sp || sp.sig !== sig) {
-        const cv = document.createElement('canvas');
-        cv.width = Math.ceil(bw * k);
-        cv.height = Math.ceil(bh * k);
-        sp = { cv, sig };
-        sprites.set(key, sp);
-        if (sprites.size > 80) sprites.delete(sprites.keys().next().value);
-      }
-      const c2 = sp.cv.getContext('2d');
-      c2.setTransform(1, 0, 0, 1, 0, 0);
-      c2.clearRect(0, 0, sp.cv.width, sp.cv.height);
-      c2.setTransform(k, 0, 0, k, 0, 0);
-      drawDragonAt(c2, g, ox, oy, size, { ...opts, cache: null });
-      sp.t = t;
-      sp.yaw = opts.yaw;
-    }
-    ctx.drawImage(sp.cv, x - ox, y - oy, bw, bh);
-    return s;
-  }
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(s, s);
-  if (opts.anchor !== 'feet') ctx.translate(0, -b.cy);
   const yaw = opts.yaw ?? (opts.flip ? Math.PI + 0.42 : -0.42);
-  drawDragon(ctx, g, { ...opts, yaw, pitch });
-  ctx.restore();
+  const feet = opts.anchor === 'feet';
+  const live = (c, X, Y, o) => {
+    c.save();
+    c.translate(X, Y);
+    c.scale(s, s);
+    if (!feet) c.translate(0, -b.cy);
+    drawDragon(c, g, { ...o, pitch });
+    c.restore();
+  };
+  if (opts.live || typeof document === 'undefined') { live(ctx, x, y, { ...opts, yaw }); return s; }
+  const still = !!opts.still;
+  const L = still ? { omega: 1, n: 1, fade: false } : LOOPS[opts.walking ? 'walk' : 'idle'];
+  const fr = frameOf((opts.t || 0) * (opts.speed || 1), L.omega, L.n);
+  const dir = dirOf(yaw);
+  const pad = Math.max(b.w * 0.3, (opts.level || 1) >= 5 ? 135 : 0);
+  const oy = feet ? 0 : -b.cy;
+  const box = [b.x0 * lvK - pad, b.y0 * lvK + oy - pad, b.x1 * lvK + pad, b.y1 * lvK + oy + pad * 0.5];
+  const base = ['dr', g.lineage, g.horns, g.wings, g.tail, g.fins, g.pattern, g.ornament, g.color, g.shiny ? 1 : 0, opts.silhouette ? 1 : 0, opts.level || 1, opts.shadow === false ? 0 : 1, opts.walking ? 1 : 0, still ? 1 : 0, pitch, opts.lod || ''].join('.');
+  drawSprite(ctx, x, y, {
+    base, dir, frame: fr.i, n: L.n, k: devScale(ctx), box, unit: s, fade: L.fade ? fr.frac : 0,
+    render: (c, fi) => {
+      // c は図の単位で拡大ずみ。live は s をかけるので、ここで割り戻す
+      c.scale(1 / s, 1 / s);
+      LOOP = still ? 0 : (Math.PI * 2) / L.omega;
+      OMEGA = still ? 0 : L.omega;
+      try { live(c, 0, 0, { ...opts, t: fr.tOf(fi), speed: 1, yaw: yawOfDir(dir) }); } finally { LOOP = 0; OMEGA = 0; }
+    },
+  });
   return s;
 }
 
@@ -489,7 +486,7 @@ export function drawDragon(ctx, g, opts = {}) {
   const lw = LINE_PX * unitPx(ctx);
   const lod = opts.lod || (screenSize(ctx, 120) < 95 ? 'low' : 'high');
   const R = rig(g, tt, k, !!opts.walking);
-  const fl = R.float ? Math.sin(tt * 1.7) * R.float * 0.5 * k + R.float : 0;
+  const fl = R.float ? Math.sin(tt * fq(1.7)) * R.float * 0.5 * k + R.float : 0;
   if (shadow) {
     const pts = [...R.spine.map((p) => [p[0], p[1], p[2], Math.max(3, p[3])]), ...R.legs.map((L) => [...L.foot, L.w * 0.6])];
     groundShadow(ctx, V, pts, R.float ? 0.12 : 0.2, R.float ? 0.8 : 1);
@@ -846,7 +843,8 @@ function face(ctx, V, H, pal, tt, lw, g, level, lod) {
     const e = norm(at([0, 0, 0], F.f, 0.72, F.u, 0.3, F.l, s * 0.62));
     const fc = V.facing(e);
     if (fc < -0.05) continue;
-    const blink = (tt % 4.6) > 4.45 ? 0.25 : 1;
+    const BL = LOOP || 4.6;
+    const blink = (tt % BL) > BL - 0.15 ? 0.25 : 1;
     // 目のくぼみの陰
     const sock = capPoly(V, C, R, e, 0.93, 16);
     if (sock) fillPoly(ctx, sock, hexA(pal.dark, 0.35));
@@ -910,7 +908,8 @@ function face(ctx, V, H, pal, tt, lw, g, level, lod) {
 
 // 口や鼻から、ときどき息や火の粒を出す
 function breath(ctx, V, H, tt, pal, g) {
-  const period = 5.5;
+  if (LOOP && LOOP < 4) return;
+  const period = LOOP || 5.5;
   const ph = (tt % period);
   if (ph > 1.6) return;
   const fire = g.color === 'ember' || g.color === 'obsidian' || g.tail === 'flame';
@@ -1022,7 +1021,7 @@ function drawCharm(ctx, V, beads, tt, lw, side) {
     if (V.facing(nrm) > 0) { const q = V.p(at(b, nrm, b[3] * 1.02)); ring.push([q.x, q.y]); } else if (ring.length) strokePts(ctx, ring.splice(0), '#b8892e', lw * 1.4);
   }
   strokePts(ctx, ring, '#b8892e', lw * 1.4);
-  const sw = Math.sin(tt * 2 - 1.2) * 2;
+  const sw = Math.sin(tt * fq(2) - 1.2) * 2;
   const hang = at(b, F.u, -b[3] * 1.05, F.l, side * b[3] * 0.25);
   const nd = norm(at([0, 0, 0], F.u, -1, F.l, side * 0.3));
   if (V.facing(nd) < -0.2) return;
@@ -1058,7 +1057,7 @@ function drawFlame(ctx, V, ch, tt) {
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(ang);
-  const f = Math.sin(tt * 9) * 3;
+  const f = Math.sin(tt * fq(9)) * 3;
   const gl = ctx.createRadialGradient(10, 0, 2, 10, 0, 26);
   gl.addColorStop(0, 'rgba(255,160,60,0.5)');
   gl.addColorStop(1, 'rgba(255,120,40,0)');

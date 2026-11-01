@@ -9,6 +9,7 @@ import { createSelect } from './scenes/select.js';
 import { createExplore } from './scenes/explore.js';
 import { createBattleScene, loadBattles } from './scenes/battle.js';
 import { createDex } from './scenes/dex.js';
+import { beginSpriteFrame, stats as spriteStats, clearSprites } from './sprites.js';
 
 const canvas = document.getElementById('game');
 const ui = new UI(canvas);
@@ -61,11 +62,47 @@ function drawToasts(ctx) {
   game.toasts = game.toasts.filter((x) => game.t - x.t0 < 2.2);
 }
 
+// ---------- 性能：FPSの計測・自動で解像度を下げる・?debug=1 で表示 ----------
+const DEBUG = /[?&]debug=1\b/.test(location.search);
+const perf = { fps: 60, acc: 0, n: 0, slow: 0, fast: 0, ms: 0 };
+function measure(dtReal, workMs) {
+  perf.acc += dtReal;
+  perf.n++;
+  perf.ms = perf.ms * 0.9 + workMs * 0.1;
+  if (perf.acc < 0.5) return;
+  perf.fps = perf.n / perf.acc;
+  perf.acc = 0;
+  perf.n = 0;
+  if (document.hidden) return;
+  // 2秒続けて30fpsを切ったら解像度を1段下げる。余裕が続けば戻す
+  if (perf.fps < 30) { perf.slow++; perf.fast = 0; } else if (perf.fps > 55) { perf.fast++; perf.slow = 0; } else { perf.slow = 0; perf.fast = 0; }
+  const cap = ui.dprCap || 2;
+  if (perf.slow >= 4 && cap > 1) { ui.dprCap = Math.max(1, cap - 0.5); ui.resize(); clearSprites(); perf.slow = 0; }
+  else if (perf.fast >= 20 && cap < 2 && cap < (window.devicePixelRatio || 1)) { ui.dprCap = Math.min(2, cap + 0.5); ui.resize(); clearSprites(); perf.fast = 0; }
+}
+function drawDebug(ctx) {
+  const lines = [
+    `${perf.fps.toFixed(0)} fps  ${perf.ms.toFixed(1)} ms`,
+    `描画 ${spriteStats.draws}  作成 ${spriteStats.builds}`,
+    `保存 ${spriteStats.sprites}枚 ${spriteStats.mpx.toFixed(1)}M  解像度 ${ui.dpr}`,
+  ];
+  ctx.font = '11px monospace';
+  ctx.fillStyle = 'rgba(20,20,20,0.6)';
+  ctx.fillRect(4, ui.H - 52, 200, 48);
+  ctx.fillStyle = perf.fps < 30 ? '#ff9a8a' : '#e8ffe0';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 9, ui.H - 48 + i * 14));
+}
+
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const real = (now - last) / 1000;
+  const dt = Math.min(0.05, real);
   last = now;
   game.t += dt;
+  const t0 = performance.now();
+  beginSpriteFrame();
   ui.beginFrame();
   if (LAYOUT.on) layoutReset();
   try {
@@ -74,8 +111,11 @@ function frame(now) {
     console.error(e);
   }
   drawToasts(ui.ctx);
+  measure(real, performance.now() - t0);
+  if (DEBUG) drawDebug(ui.ctx);
   requestAnimationFrame(frame);
 }
+window.__perf = perf;
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
 window.addEventListener('pagehide', () => game.save());
@@ -92,7 +132,7 @@ function makeIcon() {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 180, 180);
     drawEgg(ctx, 'forest_common', 130, 112, 60, {});
-    drawDragonAt(ctx, { lineage: 'quad', horns: 'branch', wings: 'leaf', fins: 'mane', tail: 'leaf', pattern: 'spots', ornament: 'none', color: 'moss' }, 78, 92, 150, { t: 0.4 });
+    drawDragonAt(ctx, { lineage: 'quad', horns: 'branch', wings: 'leaf', fins: 'mane', tail: 'leaf', pattern: 'spots', ornament: 'none', color: 'moss' }, 78, 92, 150, { t: 0.4, live: true });
     const url = c.toDataURL('image/png');
     for (const rel of ['apple-touch-icon', 'icon']) {
       const link = document.createElement('link');

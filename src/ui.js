@@ -29,7 +29,9 @@ export class UI {
   resize() {
     const r = this.canvas.getBoundingClientRect();
     const cssW = Math.max(1, r.width), cssH = Math.max(1, r.height);
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    // 描画の解像度は2倍まで。重いときは dprCap を下げる（main.js が自動で調整）
+    const dpr = Math.min(this.dprCap || 2, window.devicePixelRatio || 1);
+    this.dpr = dpr;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
     this.scale = cssW / W;

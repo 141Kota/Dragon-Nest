@@ -208,7 +208,7 @@ export function dragonDetail(game, key, o = {}) {
   const reveal = o.reveal == null ? 1 : o.reveal;
   const pop = reveal < 1 ? 0.6 + 0.4 * reveal : 1;
   // 図鑑の大きな絵は、ゆっくり向きを変えて360°を見せる
-  drawDragonAt(ctx, g, W / 2, y + stageH / 2 + 4, Math.min(260, box.w - 80) * pop, { t, level: d.level, speed: 0.55, yaw: -0.42 + Math.sin(t * 0.35) * 1.1, aspect: (stageH - 24) / Math.min(260, box.w - 80) });
+  drawDragonAt(ctx, g, W / 2, y + stageH / 2 + 4, Math.min(260, box.w - 80) * pop, { t, level: d.level, speed: 0.55, yaw: -0.42 + Math.sin(t * 0.35) * 1.1, aspect: (stageH - 24) / Math.min(260, box.w - 80), live: true });
   if (reveal < 1) {
     ctx.save();
     ctx.globalAlpha = 1 - reveal;
