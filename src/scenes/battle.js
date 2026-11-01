@@ -1,218 +1,210 @@
-// バトル: ゴブリンの予告を見て「守る・かわす・反撃」を選ぶ
-import { DATA, locationById, goblinById } from '../data.js';
+// バトルの共通の枠: ルール説明カード → ミニゲーム → 結果演出 → 報酬
+// どのバトルも同じ入口（battleInput: 連れているドラゴンとゴブリンの種類）と
+// 同じ出口（結果の段階 great / good / fail → battleReward）を持つ。
+// バトル本体は src/battles/<file>.js（DATA.battles の1行で登録）
+import { DATA, lineageById } from '../data.js';
 import { W } from '../ui.js';
-import { text, panel, button, rr, drawEgg, drawGoblin, bar, skyGradient, iconShard, iconStone, sparkle, wrapText } from '../draw.js';
-import { drawDragonAt } from '../dragon.js';
-import { createBattle, battleAct, battleSkill, battleReward } from '../logic.js';
-import { modalFrame } from './common.js';
-import { drawExplorer } from './explore.js';
-import { drawLocationDecor } from './select.js';
+import { text, panel, button, drawGoblin, controlIcon, C, textBox, iconShard, iconStone, drawEgg, sparkle, bar, rr } from '../draw.js';
+import { chooseBattle, battleInput, battleReward, makeRng } from '../logic.js';
+import { modalFrame, tag, teamStrip } from './common.js';
 
-const ANIM = 0.85;
+export const BATTLES = {};
 
-function intentIcon(ctx, id, x, y, s, t) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(s, s);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (id === 'rush') {
-    ctx.fillStyle = '#e8735a';
-    ctx.beginPath();
-    ctx.moveTo(-14, -6); ctx.lineTo(4, -6); ctx.lineTo(4, -14); ctx.lineTo(16, 0); ctx.lineTo(4, 14); ctx.lineTo(4, 6); ctx.lineTo(-14, 6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(232,115,90,0.5)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-22, -10); ctx.lineTo(-16, -10); ctx.moveTo(-24, 10); ctx.lineTo(-17, 10);
-    ctx.stroke();
-  } else if (id === 'scratch') {
-    ctx.strokeStyle = '#c94f6d';
-    ctx.lineWidth = 4;
-    for (let i = -1; i <= 1; i++) {
-      ctx.beginPath();
-      ctx.moveTo(-10 + i * 8, -14);
-      ctx.quadraticCurveTo(-2 + i * 8, 0, 6 + i * 8, 14);
-      ctx.stroke();
-    }
-  } else {
-    ctx.fillStyle = '#8f7ad6';
-    ctx.beginPath();
-    ctx.ellipse(0, 4, 13, 11, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#b9a7f0';
-    ctx.beginPath();
-    ctx.moveTo(-6, -6); ctx.lineTo(0, -16); ctx.lineTo(6, -6);
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-5, 4); ctx.lineTo(5, 4);
-    ctx.stroke();
-  }
-  ctx.restore();
+export async function loadBattles() {
+  await Promise.all(DATA.battles.map(async (b) => {
+    const mod = await import(`../battles/${b.file}.js`);
+    BATTLES[b.id] = mod.default;
+  }));
 }
 
-export function createBattleScene(game) {
-  let B = null; // ロジック側のバトル
-  let P = null; // 呼び出し時のパラメータ
-  let anim = null;
-  let log = '';
-  let done = null;
+export const HUD_H = 76;
 
-  function act(fn) {
-    if (anim || B.result) return;
-    const res = fn();
-    if (!res) return;
-    anim = { t0: game.t, res };
-    const name = res.skill ? DATA.skills[res.skill].name : DATA.battle.actions[res.action].name;
-    if (res.skill) log = `${name}！ ${res.damage ? `${res.damage}ダメージ` : ''}${res.gaugeAdd < 0 ? ' ゲージがもどった' : ''}`;
-    else if (res.matched) log = `${name} せいこう！ ${res.damage}ダメージ`;
-    else log = `${DATA.battle.intents[res.intent].name}に ${name}は いまいち…${res.damage ? ` ${res.damage}ダメージ` : ''}`;
+export function createBattleScene(game) {
+  let B = null;
+
+  function start(params) {
+    const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+    const pick = params.battle ? { battle: DATA.battles.find((b) => b.id === params.battle), quirk: params.quirk || DATA.goblins.find((g) => g.id === params.goblin).battles.find((x) => x.id === params.battle).quirk } : chooseBattle(params.goblin, makeRng(seed));
+    const input = battleInput(game.state, params.goblin, pick.battle.id, pick.quirk, { advantage: params.advantage, seed });
+    B = { params, input, phase: 'intro', t0: game.t, inst: null, remain: 0, grade: null, reward: null, from: params.from || 'explore' };
   }
 
-  function finish() {
-    const reward = battleReward(B, game.rng);
-    done = { win: B.result === 'win', reward, t0: game.t };
+  function begin() {
+    const def = BATTLES[B.input.battle.id];
+    const rng = makeRng(B.input.seed);
+    B.inst = def(B.input, { ui: game.ui, rng, game });
+    B.total = B.input.battle.time + (B.inst.timeBonus || 0);
+    B.remain = B.total;
+    B.phase = 'play';
+    B.t0 = game.t;
+  }
+
+  function finish(grade) {
+    B.grade = grade;
+    B.reward = battleReward(grade, game.rng);
+    B.phase = 'result';
+    B.t0 = game.t;
+  }
+
+  function leave() {
+    const reward = B.reward;
+    const from = B.from;
+    B = null;
+    if (from === 'explore') game.go('explore', { resume: true, result: reward });
+    else game.go('home');
+  }
+
+  function drawIntro(ctx, t) {
+    const H = game.ui.H;
+    const inp = B.input;
+    const bt = inp.battle;
+    const box = modalFrame(game, 600);
+    const pad = 20;
+    let y = box.y + pad;
+    tag(ctx, `バトル：${inp.goblin.name}`, box.x + pad, y, { size: 11, maxW: box.w - pad * 2 });
+    y += 34;
+    text(ctx, bt.name, box.x + pad, y + 14, { size: 26, maxW: box.w - pad * 2 - 110 });
+    // ゴブリンの絵
+    drawGoblin(ctx, inp.goblin, box.x + box.w - 64, y + 6, 58, { t });
+    y += 44;
+    // 1行のルール（入らなければ折り返す）
+    const ruleH = 52;
+    panel(ctx, box.x + pad, y, box.w - pad * 2, ruleH + 16, { r: 12, fill: 'rgba(0,0,0,0.25)', shadow: false });
+    const iconX = box.x + pad + 34;
+    controlIcon(ctx, bt.control, iconX, y + (ruleH + 16) / 2 + 2, 0.85, t);
+    textBox(ctx, bt.rule, box.x + pad + 68, y + 8, box.w - pad * 2 - 68 - 14, ruleH, { size: 15, valign: 'middle', maxLines: 2 });
+    y += ruleH + 16 + 14;
+    // 効く得意
+    text(ctx, '効く得意', box.x + pad, y + 11, { size: 12, color: C.sub, maxW: 70 });
+    let tx = box.x + pad + 72;
+    for (const sid of bt.stats) {
+      const s = DATA.stats.find((x) => x.id === sid);
+      tx += tag(ctx, `${s.name} ${inp.stats[sid]}`, tx, y, { size: 12, color: '#f2e8d6', fill: s.color + '66' }) + 8;
+    }
+    y += 34;
+    // 連れていくドラゴン
+    text(ctx, '連れているドラゴン', box.x + pad, y + 10, { size: 12, color: C.sub, maxW: box.w - pad * 2 });
+    y += 22;
+    const stripH = Math.max(56, Math.min(90, box.y + box.h - y - 150));
+    if (inp.team.length) teamStrip(game, box.x + pad - 3, y, box.w - pad * 2 + 6, stripH);
+    else textBox(ctx, 'ドラゴンなし（得意はすべて0）', box.x + pad, y, box.w - pad * 2, stripH, { size: 13, color: C.sub, valign: 'middle' });
+    y += stripH + 10;
+    if (inp.advantage) {
+      tag(ctx, '足跡に先に気づいた：有利に始まる', box.x + pad, y, { size: 12, color: '#1b1e25', fill: C.gold, maxW: box.w - pad * 2 });
+    } else {
+      tag(ctx, `時間 ${bt.time}秒・結果は 大成功／成功／失敗`, box.x + pad, y, { size: 11, maxW: box.w - pad * 2 });
+    }
+    const by = box.y + box.h - pad - 56;
+    button(game.ui, box.x + pad, by, box.w - pad * 2, 56, '始める', begin, { color: C.rust, size: 18 });
+    void H;
+  }
+
+  function drawHud(ctx, t) {
+    const inp = B.input;
+    ctx.fillStyle = 'rgba(14,15,20,0.85)';
+    ctx.fillRect(0, 0, W, HUD_H);
+    text(ctx, inp.battle.name, 16, 24, { size: 17, maxW: 140 });
+    text(ctx, inp.goblin.name, 16, 50, { size: 12, color: C.sub, maxW: 160 });
+    const r = Math.max(0, B.remain);
+    text(ctx, `残り${Math.ceil(r)}秒`, W - 16, 24, { size: 15, align: 'right', color: r < 6 ? '#ff9a7a' : C.text, maxW: 110 });
+    bar(ctx, W - 16 - 170, 46, 170, 9, r / B.total, r < 6 ? C.red : C.gold);
+    if (B.inst.status) {
+      const s = B.inst.status();
+      if (s) text(ctx, s, W - 16 - 170 - 12, 50, { size: 12, align: 'right', color: C.sub, maxW: W - 16 - 170 - 12 - 180 });
+    }
+  }
+
+  function drawResult(ctx, t) {
+    const el = t - B.t0;
+    const g = B.grade;
+    const info = DATA.battleRewards[g];
+    const rw0 = B.reward;
+    const nLines = Math.max(1, (rw0.eggs ? 1 : 0) + (rw0.shards ? 1 : 0) + (rw0.stones ? 1 : 0) + (rw0.steal ? 1 : 0));
+    const box = modalFrame(game, 140 + nLines * 32 + 16 + 56 + 20);
+    const col = g === 'great' ? C.gold : g === 'good' ? '#9fc0a0' : '#c88a7a';
+    // 結果演出: 文字がはずんで出る + 光
+    const k = Math.min(1, el / 0.35);
+    const pop = 1 + Math.sin(Math.min(1, el / 0.5) * Math.PI) * 0.25;
+    if (g !== 'fail') {
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + el * 0.8;
+        const rad = 40 + Math.min(1, el * 2) * 70;
+        sparkle(ctx, W / 2 + Math.cos(a) * rad, box.y + 70 + Math.sin(a) * rad * 0.45, g === 'great' ? 7 : 5, col, a);
+      }
+    }
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate(W / 2, box.y + 70);
+    ctx.scale(pop, pop);
+    text(ctx, info.name, 0, 0, { size: 34, align: 'center', color: col, maxW: (box.w - 80) / pop });
+    ctx.restore();
+    const rw = B.reward;
+    let y = box.y + 140;
+    const lines = [];
+    if (rw.eggs) lines.push({ icon: 'egg', str: `卵 ${rw.eggs}個` });
+    if (rw.shards) lines.push({ icon: 'shard', str: `星のかけら ${rw.shards}個` });
+    if (rw.stones) lines.push({ icon: 'stone', str: `ぬくもり石 ${rw.stones}個` });
+    if (rw.steal) lines.push({ icon: 'lost', str: '卵を1つ奪われた（かごに卵があれば）' });
+    if (!lines.length) lines.push({ icon: null, str: '報酬はありません' });
+    for (const l of lines) {
+      const ix = box.x + 44;
+      if (l.icon === 'egg') drawEgg(ctx, 'forest_common', ix, y - 2, 22, { shadow: false });
+      else if (l.icon === 'shard') iconShard(ctx, ix, y, 9);
+      else if (l.icon === 'stone') iconStone(ctx, ix, y, 8, t);
+      else if (l.icon === 'lost') drawEgg(ctx, 'forest_common', ix, y - 2, 22, { shadow: false, silhouette: true });
+      text(ctx, l.str, ix + 22, y, { size: 15, maxW: box.w - 44 - 22 - 24 });
+      y += 32;
+    }
+    if (el > 0.6) button(game.ui, box.x + 20, box.y + box.h - 20 - 56, box.w - 40, 56, B.from === 'explore' ? '探索に戻る' : '拠点に戻る', leave, { color: C.teal, size: 17 });
   }
 
   return {
-    nav: null,
-    debug: () => (B && !B.result ? B.intent : null),
-    enter(p) {
-      P = p;
-      game.toasts = [];
-      B = createBattle(game.state, p.goblin, p.egg, game.rng);
-      anim = null;
-      done = null;
-      log = p.stolen ? 'ゴブリンが たまごを つかんだ！' : 'ゴブリンが たまごを かかえている！';
-    },
-    draw(ctx, t) {
-      const loc = locationById(P.loc);
-      const gob = goblinById(B.goblin);
+    enter(params) { start(params); },
+    draw(ctx, t, dt) {
+      if (!B) { game.go('home'); return; }
       const H = game.ui.H;
-      const th = loc.theme;
-      skyGradient(ctx, H, th.skyTop, th.skyBottom);
-      // 地面
-      const gy = H * 0.3;
-      ctx.fillStyle = th.ground;
-      ctx.beginPath();
-      ctx.ellipse(W / 2, H * 0.62, W * 0.9, H * 0.36, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.beginPath();
-      ctx.ellipse(W / 2, H * 0.36, W * 0.6, 30, 0, 0, Math.PI * 2);
-      ctx.fill();
-      drawLocationDecor(ctx, loc, 40, gy + 30, 1.1);
-      drawLocationDecor(ctx, loc, W - 30, gy + 10, 0.8);
-
-      // 逃走ゲージ
-      panel(ctx, 14, 14, W - 28, 62, { r: 20, fill: 'rgba(255,250,240,0.95)' });
-      text(ctx, 'にげるまで', 30, 34, { size: 13, color: '#6b5560' });
-      const gr = B.gauge / DATA.battle.gaugeMax;
-      bar(ctx, 30, 48, W - 90, 16, gr, gr > 0.66 ? '#e8735a' : gr > 0.33 ? '#f2b33d' : '#7cc76a');
-      text(ctx, 'にげ', W - 50, 56, { size: 12, color: '#6b5560' });
-      text(ctx, `${gob.name}`, W - 30, 34, { size: 13, align: 'right' });
-
-      // ゴブリン（ゲージが進むほど右へ）
-      const a = anim ? (t - anim.t0) / ANIM : 1;
-      const hitNow = anim && a < 0.6 && anim.res.damage > 0;
-      const gx = W * 0.64 + gr * 70 + (anim && anim.res.gaugeAdd > 0 && a < 1 ? Math.sin(a * Math.PI) * 18 : 0);
-      const gyy = H * 0.34;
-      const fled = B.result === 'lose' && done;
-      if (!fled) drawGoblin(ctx, gob, gx, gyy, 120, { t, egg: B.result === 'win' ? null : P.egg.egg, hurt: hitNow || B.result === 'win', shake: hitNow });
-      // 体力
-      for (let i = 0; i < B.maxHp; i++) {
-        ctx.fillStyle = i < B.hp ? '#e8735a' : 'rgba(80,60,60,0.18)';
-        ctx.beginPath();
-        const hx = gx - (B.maxHp - 1) * 9 + i * 18, hy = gyy + 80;
-        ctx.arc(hx - 3.2, hy, 3.8, Math.PI, 0);
-        ctx.arc(hx + 3.2, hy, 3.8, Math.PI, 0);
-        ctx.lineTo(hx, hy + 8);
-        ctx.closePath();
-        ctx.fill();
+      const area = { x: 0, y: HUD_H, w: W, h: H - HUD_H };
+      const loc = game.scenes.explore.state ? game.scenes.explore.state.loc : 'forest';
+      const theme = DATA.locations.find((l) => l.id === loc).theme;
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, theme.skyTop);
+      bg.addColorStop(1, theme.groundDark);
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+      if (B.phase === 'intro') {
+        drawIntro(ctx, t);
+        return;
       }
-      if (anim && anim.res.damage > 0 && a < 1) {
-        text(ctx, `-${anim.res.damage}`, gx + 30, gyy - 60 - a * 30, { size: 28, align: 'center', color: '#e8735a', stroke: '#fff', strokeW: 6 });
-        for (let i = 0; i < 5; i++) sparkle(ctx, gx + Math.cos(i * 1.3) * 50 * a, gyy - 10 + Math.sin(i * 1.3) * 40 * a, 8 * (1 - a), '#fff3a8', i);
+      if (B.phase === 'play') {
+        B.remain -= dt;
+        B.inst.update(dt, area, B.remain / B.total);
+        if (B.inst.result) finish(B.inst.result);
+        else if (B.remain <= 0) finish(B.inst.timeUp());
       }
-
-      // 予告
-      if (!B.result) {
-        const it = DATA.battle.intents[B.intent];
-        const bx = 16, by = H * 0.34 - 60;
-        panel(ctx, bx, by, 170, 82, { r: 18, fill: '#fff' });
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.moveTo(bx + 160, by + 30); ctx.lineTo(bx + 186, by + 40); ctx.lineTo(bx + 160, by + 52);
-        ctx.fill();
-        text(ctx, 'つぎは…', bx + 14, by + 16, { size: 11, color: '#a08f8a' });
-        intentIcon(ctx, B.intent, bx + 30, by + 44, 1, t);
-        text(ctx, it.name, bx + 54, by + 42, { size: 19 });
-        wrapText(ctx, it.say, bx + 14, by + 68, 150, { size: 11, color: '#6b5560' });
-      }
-
-      // 相棒
-      const px = 100 + (anim && a < 0.5 && anim.res.damage > 0 ? Math.sin(a * Math.PI * 2) * 24 : 0);
-      const py = H * 0.56;
-      if (B.partner) {
-        drawDragonAt(ctx, B.partner.genome, px, py, 150, { t, level: B.partner.level });
-        text(ctx, `${B.partner.name} Lv.${B.partner.level}`, 100, py + 62, { size: 12, align: 'center', color: '#4a3b47', stroke: 'rgba(255,255,255,0.8)', strokeW: 4 });
-      } else {
-        drawExplorer(ctx, px, py + 30, 1.4, t, false);
-      }
-      // ログ
-      panel(ctx, W / 2 - 10, py - 20, W / 2 - 6, 52, { r: 16, fill: 'rgba(255,255,255,0.9)', shadow: false });
-      wrapText(ctx, log, W / 2 + 4, py - 1, W / 2 - 36, { size: 13, color: '#4a3b47' });
-
-      // ボタン
-      const busy = !!anim || !!B.result;
-      const aY = H - 108;
-      const bw = (W - 40) / 3;
-      Object.entries(DATA.battle.actions).forEach(([id, ac], i) => {
-        button(game.ui, 12 + i * (bw + 8), aY, bw, 84, ac.name, () => act(() => battleAct(B, id, game.rng)), { color: ac.color, disabled: busy, size: 20, sub: ac.hint, subSize: 10 });
-      });
-      if (B.partner) {
-        const sk = B.partner.skills;
-        const sw = (W - 24 - (sk.length - 1) * 8) / sk.length;
-        sk.forEach((sid, i) => {
-          const used = B.usedSkills.includes(sid);
-          button(game.ui, 12 + i * (sw + 8), aY - 66, sw, 52, DATA.skills[sid].name, () => act(() => battleSkill(B, sid, game.rng)), {
-            color: '#8f7ad6', disabled: busy || used, size: 15, sub: used ? 'つかった' : `わざ（1回）`, subSize: 10,
-          });
-        });
-      } else {
-        text(ctx, 'あいぼうが いると わざが つかえるよ', W / 2, aY - 34, { size: 12, align: 'center', color: '#6b5560' });
-      }
-
-      if (anim && a >= 1) {
-        anim = null;
-        if (B.result) finish();
-      }
-      if (done) {
-        const k = Math.min(1, (t - done.t0) / 0.4);
-        const box = modalFrame(game, 300);
-        ctx.globalAlpha = k;
-        if (done.win) {
-          text(ctx, 'たまごを とりかえした！', W / 2, box.y + 40, { size: 21, align: 'center', color: '#d9573a' });
-          drawEgg(ctx, P.egg.egg, W / 2, box.y + 110, 80, { glow: 0.6 + 0.3 * Math.sin(t * 4) });
-        } else {
-          text(ctx, P.stolen ? 'たまごを もっていかれた…' : 'にげられちゃった…', W / 2, box.y + 40, { size: 20, align: 'center', color: '#6b5560' });
-          drawEgg(ctx, P.egg.egg, W / 2, box.y + 110, 80, { silhouette: true });
-        }
-        iconShard(ctx, W / 2 - 50, box.y + 180, 11);
-        text(ctx, `+${done.reward.shards}`, W / 2 - 34, box.y + 180, { size: 17 });
-        if (done.reward.stones) {
-          iconStone(ctx, W / 2 + 22, box.y + 180, 10, t);
-          text(ctx, `+${done.reward.stones}`, W / 2 + 38, box.y + 180, { size: 17 });
-        }
-        ctx.globalAlpha = 1;
-        button(game.ui, box.x + 30, box.y + 220, box.w - 60, 56, 'つづける', () => {
-          P.ret.onBattleEnd({ win: done.win, egg: P.egg, stolen: P.stolen, reward: done.reward });
-          game.go('explore');
-        }, { color: '#7cc76a' });
-      }
+      B.inst.draw(ctx, area, t, { theme, remainRatio: B.remain / B.total, playing: B.phase === 'play' });
+      drawHud(ctx, t);
+      if (B.phase === 'result') drawResult(ctx, t);
     },
+    get state() { return B; },
   };
 }
+
+// バトルで共通に使う小物
+export function arenaFloor(ctx, area, theme, inset = 12) {
+  const x = area.x + inset, y = area.y + inset, w = area.w - inset * 2, h = area.h - inset * 2;
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, theme.groundDark);
+  g.addColorStop(0.3, theme.ground);
+  g.addColorStop(1, theme.groundDark);
+  ctx.save();
+  rr(ctx, x, y, w, h, 18);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
+  return { x, y, w, h };
+}
+
+export function skillName(d) { return lineageById(d.genome.lineage).skill; }

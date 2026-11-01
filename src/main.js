@@ -2,12 +2,12 @@
 import { UI, W } from './ui.js';
 import { loadState, saveState } from './save.js';
 import { makeRng, syncNests } from './logic.js';
-import { text, panel, drawEgg } from './draw.js';
+import { text, panel, drawEgg, C, LAYOUT, layoutReset } from './draw.js';
 import { drawDragonAt } from './dragon.js';
 import { createHome } from './scenes/home.js';
 import { createSelect } from './scenes/select.js';
 import { createExplore } from './scenes/explore.js';
-import { createBattleScene } from './scenes/battle.js';
+import { createBattleScene, loadBattles } from './scenes/battle.js';
 import { createDex } from './scenes/dex.js';
 
 const canvas = document.getElementById('game');
@@ -40,19 +40,21 @@ game.scenes.select = createSelect(game);
 game.scenes.explore = createExplore(game);
 game.scenes.battle = createBattleScene(game);
 game.scenes.dex = createDex(game);
-game.go('home');
 window.__game = game; // テスト用
+window.__ui = ui;
+window.__layout = { LAYOUT, layoutReset };
+loadBattles().catch((e) => console.error(e)).finally(() => { game.go('home'); requestAnimationFrame(frame); });
 
 function drawToasts(ctx) {
-  let y = 72;
+  let y = 64;
   for (const tt of game.toasts) {
     const k = game.t - tt.t0;
     if (k > 2.2) continue;
     ctx.globalAlpha = Math.min(1, k * 6, (2.2 - k) * 3);
     ctx.font = 'bold 14px sans-serif';
-    const w = Math.min(W - 30, ctx.measureText(tt.msg).width + 44);
-    panel(ctx, (W - w) / 2, y, w, 38, { r: 19, fill: '#4a3b47', stroke: false, shadow: false });
-    text(ctx, tt.msg, W / 2, y + 19, { size: 14, align: 'center', color: '#fff' });
+    const w = Math.min(W - 24, ctx.measureText(tt.msg).width + 28);
+    panel(ctx, (W - w) / 2, y, w, 38, { r: 19, fill: 'rgba(12,13,17,0.92)', stroke: 'rgba(217,162,78,0.4)', shadow: false });
+    text(ctx, tt.msg, W / 2, y + 19, { size: 14, align: 'center', color: C.text, maxW: w - 14 });
     ctx.globalAlpha = 1;
     y += 46;
   }
@@ -65,15 +67,15 @@ function frame(now) {
   last = now;
   game.t += dt;
   ui.beginFrame();
+  if (LAYOUT.on) layoutReset();
   try {
-    game.scene.draw(ui.ctx, game.t, dt);
+    if (game.scene) game.scene.draw(ui.ctx, game.t, dt);
   } catch (e) {
     console.error(e);
   }
   drawToasts(ui.ctx);
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
 window.addEventListener('pagehide', () => game.save());
@@ -85,12 +87,12 @@ function makeIcon() {
     c.width = c.height = 180;
     const ctx = c.getContext('2d');
     const g = ctx.createLinearGradient(0, 0, 0, 180);
-    g.addColorStop(0, '#ffe3c2');
-    g.addColorStop(1, '#bfe6c9');
+    g.addColorStop(0, '#2a3440');
+    g.addColorStop(1, '#4a5a48');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 180, 180);
     drawEgg(ctx, 'forest_common', 130, 112, 60, {});
-    drawDragonAt(ctx, { body: 'round', wings: 'leaf', horns: 'antler', tail: 'leafy', pattern: 'spots', color: 'leaf' }, 78, 92, 150, { t: 0.4 });
+    drawDragonAt(ctx, { lineage: 'quad', horns: 'branch', wings: 'leaf', fins: 'mane', tail: 'leaf', pattern: 'spots', ornament: 'none', color: 'moss' }, 78, 92, 150, { t: 0.4 });
     const url = c.toDataURL('image/png');
     for (const rel of ['apple-touch-icon', 'icon']) {
       const link = document.createElement('link');

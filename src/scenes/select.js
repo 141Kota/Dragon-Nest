@@ -1,10 +1,10 @@
-// 探索先えらびと相棒えらび
+// 探索先えらびと、連れていくドラゴン（最大3体）えらび
 import { DATA } from '../data.js';
 import { W } from '../ui.js';
-import { text, panel, button, rr, drawEgg, wrapText, bar } from '../draw.js';
+import { text, panel, rr, drawEgg, bar, C, textBox, pushClip, popClip } from '../draw.js';
 import { drawDragonAt } from '../dragon.js';
-import { partnerInfo, dexProgress, parseKey, dragonName } from '../logic.js';
-import { drawTopBar, drawNav, modalFrame, closeButton, levelBadge, NAV_H, TOP_H } from './common.js';
+import { dexProgress, genomeOf, teamInfo, teamStats, toggleTeam } from '../logic.js';
+import { drawTopBar, drawNav, modalFrame, closeButton, modalTitle, levelBadge, NAV_H, TOP_H, teamStrip } from './common.js';
 
 export function drawLocationDecor(ctx, loc, x, y, s) {
   const th = loc.theme;
@@ -12,49 +12,38 @@ export function drawLocationDecor(ctx, loc, x, y, s) {
   ctx.translate(x, y);
   ctx.scale(s, s);
   ctx.lineJoin = 'round';
-  if (th.block === 'tree') {
-    ctx.fillStyle = th.trunk;
-    rr(ctx, -5, -22, 10, 24, 4);
+  if (th.obstacle === 'tree') {
+    ctx.fillStyle = th.obTrunk;
+    rr(ctx, -5, -22, 10, 24, 3);
     ctx.fill();
-    for (const [ox, oy, r] of [[0, -40, 22], [-12, -30, 15], [13, -28, 15]]) {
-      ctx.fillStyle = th.blockDark;
-      ctx.beginPath();
-      ctx.arc(ox, oy + 3, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    for (const [ox, oy, r] of [[0, -42, 20], [-12, -32, 13], [13, -30, 13]]) {
-      ctx.fillStyle = th.blockMain;
-      ctx.beginPath();
-      ctx.arc(ox, oy, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (th.block === 'coral') {
-    ctx.strokeStyle = th.blockMain;
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 7;
+    ctx.fillStyle = th.obDark;
     ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(0, -30);
-    ctx.moveTo(0, -14); ctx.quadraticCurveTo(-16, -18, -16, -34);
-    ctx.moveTo(0, -20); ctx.quadraticCurveTo(14, -22, 15, -40);
-    ctx.stroke();
-    ctx.fillStyle = th.blockDark;
+    ctx.moveTo(-26, -14); ctx.lineTo(0, -70); ctx.lineTo(26, -14);
+    ctx.fill();
+    ctx.fillStyle = th.obMain;
     ctx.beginPath();
-    ctx.ellipse(10, 2, 14, 6, 0, 0, Math.PI * 2);
+    ctx.moveTo(-18, -34); ctx.lineTo(0, -76); ctx.lineTo(16, -34);
+    ctx.fill();
+  } else if (th.obstacle === 'rock') {
+    ctx.fillStyle = th.obDark;
+    ctx.beginPath();
+    ctx.moveTo(-28, 2); ctx.lineTo(-20, -24); ctx.lineTo(4, -34); ctx.lineTo(24, -18); ctx.lineTo(30, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = th.obMain;
+    ctx.beginPath();
+    ctx.moveTo(-20, -2); ctx.lineTo(-14, -22); ctx.lineTo(4, -30); ctx.lineTo(10, -14); ctx.lineTo(4, -2);
+    ctx.closePath();
     ctx.fill();
   } else {
-    ctx.fillStyle = th.blockDark;
+    ctx.fillStyle = th.obDark;
     ctx.beginPath();
-    ctx.moveTo(-24, 2); ctx.lineTo(-16, -22); ctx.lineTo(2, -32); ctx.lineTo(20, -18); ctx.lineTo(26, 2);
+    ctx.moveTo(-24, 2); ctx.lineTo(-12, -40); ctx.lineTo(-2, -30); ctx.lineTo(8, -52); ctx.lineTo(26, 2);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = th.blockMain;
+    ctx.fillStyle = th.obTrunk;
     ctx.beginPath();
-    ctx.moveTo(-18, -2); ctx.lineTo(-12, -20); ctx.lineTo(2, -28); ctx.lineTo(10, -16); ctx.lineTo(4, -2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = th.trunk;
-    ctx.beginPath();
-    ctx.ellipse(16, -4, 6, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(14, -4, 6, 3, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
@@ -63,70 +52,98 @@ export function drawLocationDecor(ctx, loc, x, y, s) {
 export function createSelect(game) {
   let modal = null;
 
-  function drawPartnerPick(ctx, t) {
+  function drawTeamPick(ctx, t) {
     const st = game.state;
-    const keys = Object.keys(st.dex).sort((a, b) => st.dex[b].level - st.dex[a].level);
-    const h = Math.min(game.ui.H - 60, 560);
+    const keys = Object.keys(st.dex).sort((a, b) => st.dex[b].level - st.dex[a].level || st.dex[b].at - st.dex[a].at);
     const close = () => { modal = null; };
-    const box = modalFrame(game, h, { onBackdrop: close });
+    const box = modalFrame(game, 600, { onBackdrop: close });
     closeButton(game, box, close);
-    text(ctx, 'あいぼうを えらぶ', box.x + 22, box.y + 34, { size: 18 });
-    const area = { x: box.x + 10, y: box.y + 64, w: box.w - 20, h: h - 76 };
-    const cols = 3, cw = area.w / cols, ch = 118;
-    const off = game.ui.scroll('partner', area.x, area.y, area.w, area.h, Math.ceil(keys.length / cols) * ch + 8);
+    modalTitle(ctx, box, `連れていくドラゴン ${st.team.length}/${DATA.dragon.teamMax}`);
+    const area = { x: box.x + 10, y: box.y + 62, w: box.w - 20, h: box.h - 74 };
+    const cols = 3, cw = area.w / cols, ch = 124;
+    const off = game.ui.scroll('team', area.x, area.y, area.w, area.h, Math.ceil(keys.length / cols) * ch + 8);
     ctx.save();
-    rr(ctx, area.x, area.y, area.w, area.h, 14);
+    rr(ctx, area.x, area.y, area.w, area.h, 12);
     ctx.clip();
+    pushClip(area.x, area.y, area.w, area.h);
     keys.forEach((k, i) => {
       const x = area.x + (i % cols) * cw;
       const y = area.y + Math.floor(i / cols) * ch - off;
       if (y > area.y + area.h || y + ch < area.y) return;
       const d = st.dex[k];
-      const g = { ...parseKey(k), shiny: d.shiny };
-      panel(ctx, x + 4, y + 4, cw - 8, ch - 8, { r: 16, fill: k === st.partner ? '#efe6ff' : '#fff', shadow: false, stroke: k === st.partner ? '#8f7ad6' : undefined });
-      drawDragonAt(ctx, g, x + cw / 2, y + 50, cw - 26, { t: t * 0.6, level: d.level, shadow: false });
-      text(ctx, `Lv.${d.level}`, x + cw / 2, y + 96, { size: 12, align: 'center', color: '#8f7ad6' });
-      game.ui.hit(x + 4, y + 4, cw - 8, ch - 8, () => { st.partner = k; game.save(); modal = null; game.toast(`${dragonName(g)}と いっしょに いくよ`); }, area);
+      const g = genomeOf(st, k);
+      const idx = st.team.indexOf(k);
+      panel(ctx, x + 4, y + 4, cw - 8, ch - 8, { r: 12, fill: idx >= 0 ? 'rgba(217,162,78,0.16)' : 'rgba(255,255,255,0.05)', shadow: false, stroke: idx >= 0 ? C.gold : undefined });
+      drawDragonAt(ctx, g, x + cw / 2, y + 50, cw - 28, { t: t * 0.6 + i, level: d.level, shadow: false, aspect: 64 / (cw - 28) });
+      levelBadge(ctx, x + cw / 2 - 24, y + ch - 40, d.level);
+      if (idx >= 0) {
+        ctx.fillStyle = C.gold;
+        ctx.beginPath();
+        ctx.arc(x + cw - 20, y + 20, 11, 0, Math.PI * 2);
+        ctx.fill();
+        text(ctx, String(idx + 1), x + cw - 20, y + 20, { size: 12, align: 'center', color: '#1b1e25', free: true });
+      }
+      game.ui.hit(x + 4, y + 4, cw - 8, ch - 8, () => {
+        if (!toggleTeam(st, k)) game.toast(`連れていけるのは${DATA.dragon.teamMax}体までです`);
+        else game.save();
+      }, area);
     });
+    popClip();
     ctx.restore();
   }
 
   return {
     nav: 'select',
-    enter() { modal = null; game.ui.resetScroll('partner'); },
+    enter() { modal = null; game.ui.resetScroll('team'); },
     draw(ctx, t) {
       const st = game.state;
       const H = game.ui.H;
-      ctx.fillStyle = '#fbf1e4';
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, C.bg2);
+      bg.addColorStop(1, C.bg);
+      ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
-      let y = TOP_H + 14;
-      // 相棒
-      const p = partnerInfo(st);
-      panel(ctx, 16, y, W - 32, 104, { fill: '#f3edff' });
-      text(ctx, 'あいぼう', 30, y + 20, { size: 13, color: '#8f7ad6' });
-      if (p) {
-        drawDragonAt(ctx, p.genome, 76, y + 62, 100, { t, level: p.level, shadow: false });
-        text(ctx, p.name, 140, y + 30, { size: 16 });
-        levelBadge(ctx, 140, y + 46, p.level);
-        text(ctx, p.skills.map((s) => DATA.skills[s].name).join('・'), 140, y + 88, { size: 12, color: '#6b5560' });
-        button(game.ui, W - 112, y + 48, 82, 40, 'かえる', () => { modal = 'partner'; }, { color: '#8f7ad6', size: 15 });
+      let y = TOP_H + 12;
+      // 連れていくドラゴン
+      const team = teamInfo(st);
+      const ts = teamStats(team);
+      panel(ctx, 16, y, W - 32, 186);
+      text(ctx, '連れていくドラゴン', 32, y + 22, { size: 14, color: C.sub, maxW: 200 });
+      text(ctx, 'タップで入れかえ', W - 32, y + 22, { size: 11, align: 'right', color: C.dim, maxW: 120 });
+      if (Object.keys(st.dex).length) {
+        teamStrip(game, 28, y + 40, W - 56, 70, { onTap: () => { modal = 'team'; } });
       } else {
-        wrapText(ctx, 'まだ ドラゴンが いないよ。\nたまごを かえすと いっしょに たんけんできる', 30, y + 50, W - 70, { size: 13, color: '#6b5560' });
+        textBox(ctx, 'まだドラゴンがいません。卵をかえすと一緒に探索できます', 32, y + 40, W - 64, 70, { size: 13, color: C.sub, valign: 'middle' });
       }
-      y += 120;
-      text(ctx, 'どこへ たんけんする？', 20, y + 6, { size: 17 });
-      y += 22;
-      const avail = H - NAV_H - y - 10;
-      const ch = Math.min(150, (avail - 16) / DATA.locations.length);
+      // 得意（2列）
+      const half = (W - 64 - 16) / 2;
+      DATA.stats.forEach((s, i) => {
+        const sx = 32 + (i % 2) * (half + 16), sy = y + 128 + Math.floor(i / 2) * 26;
+        text(ctx, s.name, sx, sy, { size: 12, color: C.sub, maxW: 46 });
+        bar(ctx, sx + 50, sy - 4, half - 50 - 30, 8, ts[s.id] / 10, s.color);
+        text(ctx, String(ts[s.id]), sx + half, sy, { size: 12, align: 'right', maxW: 28 });
+      });
+      y += 186 + 16;
+      text(ctx, '行き先', 20, y + 10, { size: 16, maxW: 200 });
+      y += 26;
+      const area = { x: 0, y, w: W, h: H - NAV_H - y - 6 };
+      const ch = Math.max(112, Math.min(150, (area.h - 8) / DATA.locations.length));
+      const off = game.ui.scroll('locs', area.x, area.y, area.w, area.h, DATA.locations.length * (ch + 8));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(area.x, area.y, area.w, area.h);
+      ctx.clip();
+      pushClip(area.x, area.y, area.w, area.h);
       DATA.locations.forEach((loc, i) => {
-        const cy = y + i * (ch + 8);
+        const cy = y + i * (ch + 8) - off;
         const th = loc.theme;
+        const cardH = ch - 4;
         ctx.save();
-        rr(ctx, 16, cy + 4, W - 32, ch - 6, 22);
-        ctx.fillStyle = 'rgba(80,50,50,0.15)';
+        rr(ctx, 16, cy + 4, W - 32, cardH, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.fill();
-        rr(ctx, 16, cy, W - 32, ch - 6, 22);
-        const g = ctx.createLinearGradient(0, cy, 0, cy + ch);
+        rr(ctx, 16, cy, W - 32, cardH, 16);
+        const g = ctx.createLinearGradient(0, cy, 0, cy + cardH);
         g.addColorStop(0, th.skyTop);
         g.addColorStop(1, th.skyBottom);
         ctx.fillStyle = g;
@@ -134,22 +151,36 @@ export function createSelect(game) {
         ctx.clip();
         ctx.fillStyle = th.ground;
         ctx.beginPath();
-        ctx.ellipse(W - 90, cy + ch + 10, 150, 50, 0, 0, Math.PI * 2);
+        ctx.ellipse(W - 80, cy + cardH + 12, 140, 46, 0, 0, Math.PI * 2);
         ctx.fill();
-        drawLocationDecor(ctx, loc, W - 70, cy + ch - 26, 1);
-        drawLocationDecor(ctx, loc, W - 130, cy + ch - 16, 0.7);
+        drawLocationDecor(ctx, loc, W - 62, cy + cardH - 18, 0.9);
+        drawLocationDecor(ctx, loc, W - 118, cy + cardH - 8, 0.65);
+        // 文字を読みやすくする帯
+        const sh = ctx.createLinearGradient(16, 0, W - 80, 0);
+        sh.addColorStop(0, 'rgba(10,12,16,0.55)');
+        sh.addColorStop(1, 'rgba(10,12,16,0)');
+        ctx.fillStyle = sh;
+        ctx.fillRect(16, cy, W - 32, cardH);
         ctx.restore();
-        text(ctx, loc.name, 34, cy + 28, { size: 20, color: '#4a3b47', stroke: 'rgba(255,255,255,0.8)', strokeW: 5 });
-        text(ctx, loc.desc, 34, cy + 54, { size: 12, color: '#5b4a55' });
+        const tx = 32, tw = W - 32 - 32 - 96;
+        text(ctx, loc.name, tx, cy + 24, { size: 18, maxW: tw });
+        textBox(ctx, loc.desc, tx, cy + 38, tw, 36, { size: 12, color: '#d8d0c0', maxLines: 2, weight: 'normal' });
         const pr = dexProgress(st, loc.id);
-        bar(ctx, 34, cy + 70, 120, 9, pr.found / pr.total, th.accent, 'rgba(255,255,255,0.7)');
-        text(ctx, `ずかん ${pr.found}/${pr.total}`, 162, cy + 75, { size: 11, color: '#5b4a55' });
-        if (ch > 120) loc.eggTable.slice(0, 3).forEach((e, k) => drawEgg(ctx, e.egg, 46 + k * 30, cy + ch - 32, 28, { shadow: false }));
-        game.ui.hit(16, cy, W - 32, ch - 6, () => game.go('explore', { loc: loc.id }));
+        bar(ctx, tx, cy + cardH - 24, 110, 8, pr.found / pr.total, th.accent);
+        text(ctx, `図鑑 ${pr.found}/${pr.total}`, tx + 120, cy + cardH - 20, { size: 11, color: '#d8d0c0', maxW: tw - 120 });
+        if (ch > 140) loc.eggTable.slice(0, 2).forEach((e, k) => drawEgg(ctx, e.egg, W - 160 + k * 26, cy + 30, 24, { shadow: false }));
+        game.ui.hit(16, cy, W - 32, cardH, () => {
+          if (!st.team.length && Object.keys(st.dex).length) game.toast('ドラゴンなしで出発します');
+          game.go('explore', { loc: loc.id });
+        }, area);
       });
-      drawTopBar(game, 'たんけん');
+      popClip();
+      ctx.restore();
+      drawTopBar(game, '探索');
       drawNav(game, 'select');
-      if (modal === 'partner') drawPartnerPick(ctx, t);
+      if (modal === 'team') drawTeamPick(ctx, t);
     },
+    set modal(m) { modal = m; },
   };
 }
+

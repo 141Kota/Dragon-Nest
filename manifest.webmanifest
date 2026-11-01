@@ -1,12 +1,12 @@
 {
-  "name": "ドラゴンのす",
-  "short_name": "ドラゴンのす",
+  "name": "ドラゴンの巣",
+  "short_name": "ドラゴンの巣",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fbf1e4",
-  "theme_color": "#fbf1e4",
+  "background_color": "#1b1e25",
+  "theme_color": "#1b1e25",
   "lang": "ja",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
