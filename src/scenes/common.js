@@ -1,5 +1,5 @@
 // 画面共通の部品（上のバー・下のナビ・モーダル・ドラゴン詳細）
-import { DATA, lineageById } from '../data.js';
+import { DATA, lineageById, VERSION } from '../data.js';
 import { W } from '../ui.js';
 import { text, panel, button, rr, iconShard, iconStone, sparkle, C, statBars, logBox, measure, LAYOUT } from '../draw.js';
 import { drawDragonAt } from '../dragon.js';
@@ -18,7 +18,8 @@ export function drawTopBar(game, title) {
   ctx.fillRect(0, 0, W, TOP_H);
   ctx.fillStyle = C.glassLine;
   ctx.fillRect(0, TOP_H - 1, W, 1);
-  text(ctx, title, 16, TOP_H / 2, { size: 18, maxW: W - 16 - 190, color: C.text });
+  text(ctx, title, 16, TOP_H / 2 - 4, { size: 18, maxW: W - 16 - 190, color: C.text });
+  text(ctx, VERSION, 16, TOP_H - 11, { size: 9, maxW: W - 16 - 190, color: C.dim, noHalo: true });
   const pill = (x, label, icon) => {
     panel(ctx, x, 12, 80, 32, { r: 16, shadow: false, fill: 'rgba(70,56,40,0.07)' });
     icon(x + 18, 28);
