@@ -1,5 +1,6 @@
 // キャンバスと入力（即時モードのボタン登録・縦スクロール・仮想スティック・複数の指）
 export const W = 390; // 論理座標の横幅
+export const DRAG_PX = 8; // これ以上指が動いたらタップではなくドラッグ
 
 export class UI {
   constructor(canvas) {
@@ -112,6 +113,9 @@ export class UI {
     return null;
   }
 
+  // 縦のパン操作（touch-action: pan-y 相当）はこのクラスが自分で扱う。
+  // ブラウザ任せにすると iOS ではドラッグ中に pointercancel が来てボタンとスクロールが両方止まるため、
+  // canvas は touch-action: none にして、スクロール領域とボタンの上の縦ドラッグをここでスクロールに変える。
   onDown(e) {
     const p = this.toLocal(e);
     try { this.canvas.setPointerCapture(e.pointerId); } catch (err) { /* 古いブラウザ */ }
@@ -122,9 +126,10 @@ export class UI {
       g.onPress(p);
     } else if (g && g.kind === 'stick') {
       ptr.stick = g.id;
-    } else if (g && g.kind === 'scroll') {
-      ptr.scroll = g.s;
-      g.s.vel = 0;
+    } else {
+      // ボタンの上から触っても、その下にスクロール領域があればドラッグでスクロールできる
+      const sc = this.find(p, ['scroll']);
+      if (sc) { ptr.scroll = sc.s; sc.s.vel = 0; }
     }
     this.pointers.set(e.pointerId, ptr);
   }
@@ -133,7 +138,11 @@ export class UI {
     const pt = this.pointers.get(e.pointerId);
     if (!pt) return;
     const p = this.toLocal(e);
-    if (Math.hypot(p.x - pt.start.x, p.y - pt.start.y) > 9) pt.moved = true;
+    // 指が DRAG_PX 以上動いたらスクロール扱い（ボタンの反応は取り消す）
+    if (!pt.moved && Math.hypot(p.x - pt.start.x, p.y - pt.start.y) > DRAG_PX) {
+      pt.moved = true;
+      pt.last = { x: pt.last.x, y: pt.start.y + Math.sign(p.y - pt.start.y) * DRAG_PX };
+    }
     if (pt.scroll && pt.moved) {
       const dy = p.y - pt.last.y;
       pt.scroll.offset -= dy;
@@ -150,6 +159,15 @@ export class UI {
     if (pt.moved && Math.hypot(pt.last.x - pt.start.x, pt.last.y - pt.start.y) > 24) return;
     const g = this.find(pt.start, ['tap']);
     if (g && g.onTap) g.onTap(pt.start);
+  }
+
+  // 押している最中か（ボタンの見た目を沈める）。ドラッグに変わったら false
+  held(x, y, w, h) {
+    for (const p of this.pointers.values()) {
+      if (p.moved || p.pressed || p.stick) continue;
+      if (p.start.x >= x && p.start.x <= x + w && p.start.y >= y && p.start.y <= y + h) return true;
+    }
+    return false;
   }
 
   // キーボード（パソコンで試すとき用）

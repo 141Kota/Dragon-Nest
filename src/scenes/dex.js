@@ -31,7 +31,7 @@ export function createDex(game) {
         const on = i === page;
         const x = 12 + i * tw;
         rr(ctx, x + 3, tabY, tw - 6, 44, 12);
-        ctx.fillStyle = on ? l.theme.skyTop : 'rgba(255,255,255,0.05)';
+        ctx.fillStyle = on ? l.theme.skyBottom : 'rgba(70,56,40,0.06)';
         ctx.fill();
         if (on) { ctx.strokeStyle = l.theme.accent; ctx.lineWidth = 2; ctx.stroke(); }
         text(ctx, l.name, x + tw / 2, tabY + 22, { size: 13, align: 'center', color: on ? C.text : C.dim, maxW: tw - 6 - 13 });
@@ -59,8 +59,8 @@ export function createDex(game) {
         const d = st.dex[key];
         const cx0 = x + 5, cy0 = y + 4, cwid = cw - 10, chei = ch - 12;
         const grad = ctx.createLinearGradient(0, cy0, 0, cy0 + chei);
-        grad.addColorStop(0, d ? loc.theme.skyTop : 'rgba(255,255,255,0.06)');
-        grad.addColorStop(1, d ? loc.theme.skyBottom : 'rgba(255,255,255,0.02)');
+        grad.addColorStop(0, d ? loc.theme.skyTop : 'rgba(70,56,40,0.07)');
+        grad.addColorStop(1, d ? loc.theme.skyBottom : 'rgba(70,56,40,0.03)');
         panel(ctx, cx0, cy0, cwid, chei, { r: 14, fill: grad });
         const g = d ? genomeOf(st, key) : { ...sp, ...defaultLook(sp, loc.id) };
         drawDragonAt(ctx, g, x + cw / 2, cy0 + 50, cwid - 16, { t: t + i * 0.37, speed: 0.45, level: d ? d.level : 1, silhouette: !d, shadow: !!d, aspect: 74 / (cwid - 16) });
@@ -71,7 +71,7 @@ export function createDex(game) {
         } else {
           text(ctx, '？？？', x + cw / 2, cy0 + 106, { size: 12, align: 'center', color: C.dim, maxW: cwid - 12 });
         }
-        tag(ctx, lineageById(sp.lineage).name, x + cw / 2, cy0 + 118, { align: 'center', size: 10, maxW: cwid - 12, fill: 'rgba(0,0,0,0.3)', color: d ? '#e0d8c8' : C.dim });
+        tag(ctx, lineageById(sp.lineage).name, x + cw / 2, cy0 + 118, { align: 'center', size: 10, maxW: cwid - 12, fill: d ? 'rgba(253,251,246,0.85)' : 'rgba(70,56,40,0.08)', color: d ? C.text : C.sub });
         game.ui.hit(cx0, cy0, cwid, chei, () => {
           if (d) detail = key;
           else game.toast('まだ見つけていないドラゴンです');

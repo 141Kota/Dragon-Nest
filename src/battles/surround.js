@@ -1,7 +1,8 @@
 // 包囲: 六角の盤にドラゴンを置いて、ゴブリンの逃げ道をふさぐ（作戦）
 // 知恵 → ゴブリンの次の一歩が見える / 力 → 最初の岩が増える / 器用さ → 続けて置ける回数 / 速さ → 2歩進むのを止める
 import { W } from '../ui.js';
-import { text, drawGoblin, C, button, textBox } from '../draw.js';
+import { text, C, button, textBox } from '../draw.js';
+import { drawGoblin } from '../figures.js';
 import { drawDragonAt } from '../dragon.js';
 import { arenaFloor } from '../scenes/battle.js';
 import { statK } from '../logic.js';
@@ -129,9 +130,9 @@ export default function create(input, env) {
         }
         ctx.closePath();
         const edge = isEdge(cell.c, cell.r);
-        ctx.fillStyle = cell.kind === 'rock' ? 'rgba(30,26,24,0.85)' : edge ? 'rgba(0,0,0,0.28)' : 'rgba(255,255,255,0.07)';
+        ctx.fillStyle = cell.kind === 'rock' ? 'rgba(96,84,76,0.85)' : edge ? 'rgba(70,56,40,0.2)' : 'rgba(255,255,255,0.3)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.strokeStyle = 'rgba(70,56,40,0.3)';
         ctx.lineWidth = 1.2;
         ctx.stroke();
         if (cell.kind === 'rock') {
@@ -161,11 +162,11 @@ export default function create(input, env) {
       let gx = gp.x, gy = gp.y;
       if (S.from && S.moveT < 1) { const f = pos(S.from.c, S.from.r); gx = f.x + (gp.x - f.x) * S.moveT; gy = f.y + (gp.y - f.y) * S.moveT; }
       if (S.escaped) gy += S.endT * 200;
-      drawGoblin(ctx, input.goblin, gx, gy - R * 0.6, R * 1.5, { t, egg: 'forest_common', shake: S.result === 'win' });
+      drawGoblin(ctx, input.goblin, gx, gy - R * 0.6, R * 1.5, { t, egg: 'forest_common', shake: S.result === 'win', pose: S.result === 'win' ? 'lose' : S.from && S.moveT < 1 ? 'walk' : 'idle' });
       // 下の欄
       const fy = g.y + g.h - footH;
       if (S.endT >= 0) {
-        text(ctx, S.result === 'win' ? '囲んだ' : '逃げられた', W / 2, fy + 30, { size: 20, align: 'center', color: S.result === 'win' ? C.gold : '#e0907a', maxW: g.w - 40 });
+        text(ctx, S.result === 'win' ? '囲んだ' : '逃げられた', W / 2, fy + 30, { size: 20, align: 'center', color: S.result === 'win' ? C.gold : C.red, maxW: g.w - 40 });
       } else if (S.opening > 0) {
         textBox(ctx, `ゴブリンはまだ様子見。あと${S.opening}個置ける`, g.x + 24, fy + 8, g.w - 48, 52, { size: 13, color: C.gold, valign: 'middle', align: 'center' });
       } else if (S.free > 0) {

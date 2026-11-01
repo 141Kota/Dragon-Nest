@@ -53,7 +53,7 @@ function drawToasts(ctx) {
     ctx.globalAlpha = Math.min(1, k * 6, (2.2 - k) * 3);
     ctx.font = 'bold 14px sans-serif';
     const w = Math.min(W - 24, ctx.measureText(tt.msg).width + 28);
-    panel(ctx, (W - w) / 2, y, w, 38, { r: 19, fill: 'rgba(12,13,17,0.92)', stroke: 'rgba(217,162,78,0.4)', shadow: false });
+    panel(ctx, (W - w) / 2, y, w, 38, { r: 19, fill: 'rgba(253,251,246,0.97)', stroke: 'rgba(168,117,31,0.5)', shadow: false });
     text(ctx, tt.msg, W / 2, y + 19, { size: 14, align: 'center', color: C.text, maxW: w - 14 });
     ctx.globalAlpha = 1;
     y += 46;
@@ -87,8 +87,8 @@ function makeIcon() {
     c.width = c.height = 180;
     const ctx = c.getContext('2d');
     const g = ctx.createLinearGradient(0, 0, 0, 180);
-    g.addColorStop(0, '#2a3440');
-    g.addColorStop(1, '#4a5a48');
+    g.addColorStop(0, '#a9c4cf');
+    g.addColorStop(1, '#dfe3d6');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 180, 180);
     drawEgg(ctx, 'forest_common', 130, 112, 60, {});

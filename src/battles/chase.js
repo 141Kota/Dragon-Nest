@@ -1,9 +1,10 @@
 // 追跡: 卵を持って逃げるゴブリンを、スティックで追いかけて捕まえる（アクション）
 // 速さ → 自分の足の速さ / 力 → 技の足止めの長さ / 知恵 → 技の待ち時間 / 器用さ → 捕まえる距離
 import { W } from '../ui.js';
-import { text, drawGoblin, C, shadowEllipse } from '../draw.js';
+import { text, C, shadowEllipse, drawStick } from '../draw.js';
+
 import { drawDragonAt } from '../dragon.js';
-import { drawExplorer } from '../scenes/explore.js';
+import { drawGoblin, drawExplorer } from '../figures.js';
 import { arenaFloor, skillName } from '../scenes/battle.js';
 import { statK } from '../logic.js';
 
@@ -36,6 +37,25 @@ export default function create(input, env) {
   let geo = null; // 画面上の闘技場
 
   function toScreen(x, y) { return { x: geo.x + x * geo.w, y: geo.y + y * geo.h }; }
+
+  // フィールドで立っていた位置から始める（画面上の位置を闘技場の中の割合に直す）
+  let placed = !env.start;
+  function placeFromField() {
+    placed = true;
+    const st = env.start;
+    const cl = (v) => Math.max(0.1, Math.min(0.9, v));
+    const toN = (p) => ({ x: cl((p.x - geo.x) / geo.w), y: cl((p.y - geo.y) / geo.h) });
+    const p = toN(st.player);
+    S.p.x = p.x; S.p.y = p.y;
+    if (st.foe) {
+      const g = toN(st.foe);
+      let dx = g.x - p.x, dy = g.y - p.y;
+      const d = Math.hypot(dx, dy * (geo.h / geo.w));
+      const want = advantage ? 0.22 : 0.3;
+      if (d < want) { const m = d || 1; dx = d ? dx / m : 0; dy = d ? dy / m : -1; S.g.x = cl(p.x + dx * want); S.g.y = cl(p.y + dy * want * (geo.w / geo.h)); } else { S.g.x = g.x; S.g.y = g.y; }
+    }
+    S.rocks = S.rocks.filter((k) => Math.hypot(k.x - S.p.x, k.y - S.p.y) > 0.12 && Math.hypot(k.x - S.g.x, k.y - S.g.y) > 0.12);
+  }
 
   function useSkill(i) {
     if (S.result || S.cds[i] > 0) return;
@@ -81,7 +101,8 @@ export default function create(input, env) {
       let mx = st.x + kd.x, my = st.y + kd.y;
       const m = Math.hypot(mx, my);
       if (m > 1) { mx /= m; my /= m; }
-      if (m > 0.1) { move(S.p, mx * pSpeed, my * pSpeed, dt, 0.035); if (Math.abs(mx) > 0.2) S.p.face = mx > 0 ? 1 : -1; }
+      S.moving = m > 0.1;
+      if (S.moving) { move(S.p, mx * pSpeed, my * pSpeed, dt, 0.035); if (Math.abs(mx) > 0.2) S.p.face = mx > 0 ? 1 : -1; }
       // ゴブリン: プレイヤーから離れる + 壁を避ける + 癖でジグザグ
       const g = S.g;
       if (g.stun > 0) { g.stun -= dt; g.vx *= 0.9; g.vy *= 0.9; } else {
@@ -119,6 +140,7 @@ export default function create(input, env) {
       this.remainRatio = info.remainRatio;
       const btnH = 96;
       geo = arenaFloor(ctx, { x: area.x, y: area.y, w: area.w, h: area.h - btnH }, info.theme);
+      if (!placed) placeFromField();
       // 岩
       for (const k of S.rocks) {
         const p = toScreen(k.x, k.y);
@@ -153,12 +175,12 @@ export default function create(input, env) {
       // ゴブリンとプレイヤー（奥から）
       const gp = toScreen(S.g.x, S.g.y), pp = toScreen(S.p.x, S.p.y);
       const drawG = () => {
-        drawGoblin(ctx, input.goblin, gp.x, gp.y - 20, 46, { t, egg: 'forest_common', flip: S.g.face < 0, shake: S.g.stun > 0 });
+        drawGoblin(ctx, input.goblin, gp.x, gp.y - 46 * 0.46 * input.goblin.look.size, 46, { t, egg: 'forest_common', flip: S.g.face < 0, shake: S.g.stun > 0, hurt: S.g.stun > 0, walking: S.g.stun <= 0 });
         if (S.g.stun > 0) for (let i = 0; i < 3; i++) { const a = t * 6 + i * 2.1; ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(gp.x + Math.cos(a) * 16, gp.y - 52 + Math.sin(a) * 5, 2.5, 0, TAU); ctx.fill(); }
       };
       const drawP = () => {
         team.forEach((d, i) => drawDragonAt(ctx, d.genome, pp.x - S.p.face * (26 + i * 18), pp.y - 4 - i * 6, 42, { anchor: 'feet', t: t + i, level: d.level, flip: S.p.face < 0, speed: 1.5 }));
-        drawExplorer(ctx, pp.x, pp.y, 0.9, t, true, S.p.face);
+        drawExplorer(ctx, pp.x, pp.y, 0.9, t, !!S.moving, S.p.face);
       };
       if (gp.y < pp.y) { drawG(); drawP(); } else { drawP(); drawG(); }
       for (const f of S.fx) {
@@ -176,19 +198,14 @@ export default function create(input, env) {
       S.stick = stick;
       const rest = { x: 70, y: by + 34 };
       const cx = stick.active ? stick.cx : rest.x, cy = stick.active ? stick.cy : rest.y;
-      ctx.fillStyle = 'rgba(10,12,16,0.4)';
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(cx, cy, 44, 0, TAU); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = 'rgba(230,220,200,0.8)';
-      ctx.beginPath(); ctx.arc(cx + stick.x * 34, cy + stick.y * 34, 20, 0, TAU); ctx.fill();
+      drawStick(ctx, cx, cy, stick, 44);
       const n = skills.length, bw = 60, gap = 18;
       skills.forEach((sk, i) => {
         const x = W - 16 - (n - i) * bw - (n - 1 - i) * gap;
         const ready = S.cds[i] <= 0;
-        ctx.fillStyle = ready ? 'rgba(154,77,52,0.95)' : 'rgba(60,60,66,0.9)';
+        ctx.fillStyle = ready ? 'rgba(162,80,47,0.95)' : 'rgba(214,206,194,0.95)';
         ctx.beginPath(); ctx.arc(x + bw / 2, by + 24, 28, 0, TAU); ctx.fill();
-        ctx.strokeStyle = ready ? C.gold : 'rgba(255,255,255,0.2)';
+        ctx.strokeStyle = ready ? C.gold : 'rgba(70,56,40,0.3)';
         ctx.lineWidth = 2;
         ctx.stroke();
         if (sk.d) drawDragonAt(ctx, sk.d.genome, x + bw / 2, by + 24, 40, { t, shadow: false, level: sk.d.level, silhouette: !ready, aspect: 0.8 });

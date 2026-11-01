@@ -77,23 +77,27 @@ export function createHome(game) {
   function drawIsland(ctx, L, t) {
     const H = game.ui.H;
     const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, '#1a2230');
-    sky.addColorStop(0.55, '#3a4450');
-    sky.addColorStop(1, '#4a4a42');
+    sky.addColorStop(0, '#a9c4cf');
+    sky.addColorStop(0.55, '#dfe3d6');
+    sky.addColorStop(1, '#e9e1cc');
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, W, H);
-    // 月と星
-    ctx.fillStyle = 'rgba(240,226,190,0.85)';
-    ctx.beginPath();
-    ctx.arc(318, TOP_H + 46, 16, 0, Math.PI * 2);
-    ctx.fill();
-    for (let i = 0; i < 14; i++) {
-      const a = 0.3 + 0.3 * Math.sin(t * 1.3 + i * 2.1);
-      ctx.fillStyle = `rgba(255,240,210,${a})`;
-      ctx.fillRect((i * 97) % W, TOP_H + 10 + ((i * 53) % 90), 1.6, 1.6);
+    // 日の光と雲（ゆっくり流れる）
+    const sun = ctx.createRadialGradient(318, TOP_H + 46, 4, 318, TOP_H + 46, 70);
+    sun.addColorStop(0, 'rgba(255,248,224,0.95)');
+    sun.addColorStop(1, 'rgba(255,248,224,0)');
+    ctx.fillStyle = sun;
+    ctx.fillRect(240, TOP_H - 30, 160, 160);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    for (let i = 0; i < 4; i++) {
+      const cx = ((i * 131 + t * 6) % (W + 140)) - 70, cy = TOP_H + 26 + i * 22;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 38, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 22, cy - 5, 22, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
     // 遠くの山並み（奥の層）
-    ctx.fillStyle = '#28323c';
+    ctx.fillStyle = '#9fb1b0';
     ctx.beginPath();
     ctx.moveTo(0, L.cy - L.IH * 0.7);
     ctx.lineTo(70, L.cy - L.IH * 1.35);
@@ -104,7 +108,7 @@ export function createHome(game) {
     ctx.lineTo(W, H);
     ctx.lineTo(0, H);
     ctx.fill();
-    ctx.fillStyle = '#34403e';
+    ctx.fillStyle = '#8ea596';
     ctx.beginPath();
     ctx.moveTo(0, L.cy - L.IH * 0.45);
     ctx.quadraticCurveTo(110, L.cy - L.IH * 0.95, 220, L.cy - L.IH * 0.6);
@@ -113,7 +117,7 @@ export function createHome(game) {
     ctx.lineTo(0, H);
     ctx.fill();
     // 島の影と側面（厚み）
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(50,60,50,0.22)';
     ctx.beginPath();
     ctx.ellipse(L.cx, L.cy + 46, L.IW * 0.95, L.IH * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -123,19 +127,19 @@ export function createHome(game) {
     };
     isle(28);
     const side = ctx.createLinearGradient(0, L.cy, 0, L.cy + L.IH + 28);
-    side.addColorStop(0, '#5a4636');
-    side.addColorStop(1, '#2e241c');
+    side.addColorStop(0, '#9a7c5c');
+    side.addColorStop(1, '#6a5038');
     ctx.fillStyle = side;
     ctx.fill();
     isle(0);
     const top = ctx.createRadialGradient(L.cx - 50, L.cy - L.IH * 0.5, 20, L.cx, L.cy, L.IW * 1.1);
-    top.addColorStop(0, '#6f8a58');
-    top.addColorStop(0.6, '#4c6b3e');
-    top.addColorStop(1, '#2f4a2c');
+    top.addColorStop(0, '#b4c98e');
+    top.addColorStop(0.6, '#93ae6c');
+    top.addColorStop(1, '#6f8c50');
     ctx.fillStyle = top;
     ctx.fill();
     // 小道
-    ctx.fillStyle = 'rgba(160,140,100,0.45)';
+    ctx.fillStyle = 'rgba(214,196,150,0.75)';
     for (let i = 0; i < 6; i++) {
       const p = L.map(-0.05 + Math.sin(i) * 0.05, 0.9 - i * 0.28);
       ctx.beginPath();
@@ -143,7 +147,7 @@ export function createHome(game) {
       ctx.fill();
     }
     // 草
-    ctx.strokeStyle = '#7f9a5a';
+    ctx.strokeStyle = '#5f7a40';
     ctx.lineWidth = 2;
     for (const [u, v] of [[-0.78, 0.25], [0.74, 0.3], [-0.5, -0.55], [0.55, -0.55], [0.1, 0.82], [-0.08, 0.36]]) {
       const p = L.map(u, v);
@@ -166,7 +170,7 @@ export function createHome(game) {
       st.storage.forEach((e, i) => {
         const x = box.x + 16 + (i % 4) * cw;
         const y = box.y + 64 + Math.floor(i / 4) * 112;
-        panel(ctx, x + 4, y, cw - 8, 100, { r: 12, fill: 'rgba(255,255,255,0.05)', shadow: false });
+        panel(ctx, x + 4, y, cw - 8, 100, { r: 12, fill: 'rgba(70,56,40,0.06)', shadow: false });
         drawEgg(ctx, e.egg, x + cw / 2, y + 42, 54, { wobble: Math.sin(t * 2 + i) * 0.04 });
         rarityStars(ctx, e.egg, x + cw / 2, y + 84, 7);
         game.ui.hit(x + 4, y, cw - 8, 100, () => {
@@ -207,7 +211,7 @@ export function createHome(game) {
       closeButton(game, box, close);
       modalTitle(ctx, box, f.name);
       ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillStyle = 'rgba(70,56,40,0.08)';
       rr(ctx, box.x + 24, box.y + 60, box.w - 48, 130, 14);
       ctx.fill();
       ctx.restore();
@@ -262,7 +266,7 @@ export function createHome(game) {
         items.push({ y: p.y, draw: () => {
           const lv = facilityLevel(st, f.id);
           drawFacility(ctx, f.look, p.x, p.y, 0.95, lv, t);
-          if (lv <= 0) labels.push(() => tag(ctx, f.name, p.x, p.y + 20, { align: 'center', size: 11, fill: 'rgba(15,16,20,0.75)', color: C.text, maxW: 110 }));
+          if (lv <= 0) labels.push(() => tag(ctx, f.name, p.x, p.y + 20, { align: 'center', size: 11, fill: C.glass, color: C.text, maxW: 110 }));
           game.ui.hit(p.x - 46, p.y - 90, 92, 120, () => { modal = { type: 'facility', id: f.id }; });
         } });
       });
@@ -277,15 +281,15 @@ export function createHome(game) {
             const wob = s.ready ? Math.sin(t * 12) * 0.12 * (Math.sin(t * 2) > 0 ? 1 : 0.2) : Math.sin(t * 1.5 + i) * 0.03;
             drawEgg(ctx, n.egg.egg, p.x, p.y - 28, 46, { shadow: false, wobble: wob, glow: s.ready ? 0.7 + 0.3 * Math.sin(t * 5) : 0 });
             if (s.ready) {
-              labels.push(() => tag(ctx, 'かえる', p.x, p.y + 12, { align: 'center', size: 11, fill: '#8a4a2a', color: '#fff3dc' }));
+              labels.push(() => tag(ctx, 'かえる', p.x, p.y + 12, { align: 'center', size: 11, fill: C.rust, color: '#fffaf0' }));
             } else {
               labels.push(() => {
                 bar(ctx, p.x - 28, p.y + 13, 56, 7, s.progress, C.gold);
-                tag(ctx, formatTime(s.remain), p.x, p.y + 24, { align: 'center', size: 11, fill: 'rgba(15,16,20,0.75)', color: C.text });
+                tag(ctx, formatTime(s.remain), p.x, p.y + 24, { align: 'center', size: 11, fill: C.glass, color: C.text });
               });
             }
           } else {
-            labels.push(() => tag(ctx, '空き', p.x, p.y + 14, { align: 'center', size: 11, fill: 'rgba(15,16,20,0.6)', color: C.sub }));
+            labels.push(() => tag(ctx, '空き', p.x, p.y + 14, { align: 'center', size: 11, fill: C.glass, color: C.sub }));
           }
           game.ui.hit(p.x - 44, p.y - 64, 88, 98, () => tapNest(i));
         } });

@@ -1,75 +1,27 @@
 // 探索: 左下の仮想スティックで自由に歩く。斜め上からの見下ろしで、奥ほど小さく見える
 import { DATA, locationById, goblinById } from '../data.js';
 import { W } from '../ui.js';
-import { text, panel, button, rr, drawEgg, iconShard, iconStone, sparkle, shadowEllipse, C, drawGoblin, textBox, measure } from '../draw.js';
+import { text, panel, button, rr, drawEgg, iconShard, iconStone, sparkle, shadowEllipse, C, textBox, measure, drawStick, tagOnField } from '../draw.js';
+import { drawGoblin, drawExplorer } from '../figures.js';
 import { drawDragonAt } from '../dragon.js';
 import { generateField, moveCircle, rollEgg, reduceHatch, addEggToStorage, randInt, makeRng, genomeOf } from '../logic.js';
 import { modalFrame, modalTitle } from './common.js';
 
 const TAU = Math.PI * 2;
+export const BATTLE_ZOOM = 1.28;
 
-// 探索する子（フードと外套）
-export function drawExplorer(ctx, x, y, s, t, walking, face = 1) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(s * face, s);
-  shadowEllipse(ctx, 0, 2, 15, 5, 0.35);
-  const hop = walking ? -Math.abs(Math.sin(t * 14)) * 3.5 : 0;
-  ctx.translate(0, hop);
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = '#1a1612';
-  // 足
-  ctx.fillStyle = '#3a2e26';
-  const k = walking ? Math.sin(t * 14) * 4 : 0;
-  rr(ctx, -8 + k, -6, 7, 8, 3); ctx.fill(); ctx.stroke();
-  rr(ctx, 1 - k, -6, 7, 8, 3); ctx.fill(); ctx.stroke();
-  // 背負いかご
-  ctx.fillStyle = '#7a5a3a';
-  rr(ctx, -16, -34, 12, 20, 4);
-  ctx.fill();
-  ctx.stroke();
-  // 外套
-  const g = ctx.createLinearGradient(0, -30, 0, 0);
-  g.addColorStop(0, '#6a4a3a');
-  g.addColorStop(1, '#4a3228');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(-11, -2);
-  ctx.quadraticCurveTo(-13, -28, 0, -30);
-  ctx.quadraticCurveTo(13, -28, 11, -2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  // 顔とフード
-  ctx.fillStyle = '#e6c8a8';
-  ctx.beginPath();
-  ctx.arc(1, -38, 10, 0, TAU);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#7a3a2e';
-  ctx.beginPath();
-  ctx.arc(0, -40, 12, Math.PI * 1.0, Math.PI * 1.95);
-  ctx.quadraticCurveTo(-6, -58, -12, -50);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#1a1612';
-  ctx.beginPath();
-  ctx.arc(4, -37, 1.6, 0, TAU);
-  ctx.arc(9, -37, 1.6, 0, TAU);
-  ctx.fill();
-  ctx.restore();
-}
+export { drawExplorer };
 
 export function createExplore(game) {
   let S = null;
 
   // ---------- 投影（奥ほど小さく、上に） ----------
+  // zoom はバトルのときにカメラだけ少し寄るのに使う
   function proj(wx, wy) {
     const dy = Math.max(-600, wy - S.cam.y);
     const s = 1 / (1 + dy / 1100);
-    return { x: W / 2 + (wx - S.cam.x) * s, y: S.anchorY - dy * 0.55 * s, s };
+    const z = S.zoom;
+    return { x: W / 2 + (wx - S.cam.x) * s * z, y: S.anchorY - dy * 0.55 * s * z, s: s * z };
   }
 
   function start(locId) {
@@ -83,7 +35,7 @@ export function createExplore(game) {
     S = {
       loc: locId, field, decor, weather, rng,
       p: { x: field.start.x, y: field.start.y, face: 1, walking: false },
-      cam: { x: field.start.x, y: field.start.y },
+      cam: { x: field.start.x, y: field.start.y }, zoom: 1, foe: null, actors: null,
       trail: [], bag: [], shards: 0, stones: 0, anchorY: 500,
       t0: game.t, msg: null, summary: false, flash: 0, pending: null, foundTracks: new Set(),
     };
@@ -133,8 +85,21 @@ export function createExplore(game) {
 
   function startBattle(g) {
     g.done = true;
+    S.foe = g;
+    g.face = g.x < S.p.x ? 1 : -1;
+    S.p.face = g.x < S.p.x ? -1 : 1;
+    S.p.walking = false;
     S.pending = { goblin: g.goblin, advantage: g.noticed, gid: g.id };
     S.flash = 0.01;
+  }
+
+  // バトル中のカメラ：プレイヤーとゴブリンの間に寄る
+  function battleCam(dt, zoom) {
+    const fx = S.foe ? (S.p.x + S.foe.x) / 2 : S.p.x, fy = S.foe ? (S.p.y + S.foe.y) / 2 : S.p.y;
+    const k = Math.min(1, dt * 4);
+    S.cam.x += (fx - S.cam.x) * k;
+    S.cam.y += (fy - S.cam.y) * k;
+    S.zoom += (zoom - S.zoom) * k;
   }
 
   function applyResult(res) {
@@ -156,7 +121,8 @@ export function createExplore(game) {
     if (S.summary) return;
     if (S.flash > 0) {
       S.flash += dt;
-      if (S.flash > 0.5) {
+      battleCam(dt, BATTLE_ZOOM);
+      if (S.flash > 0.7) {
         const pd = S.pending;
         S.flash = 0;
         S.pending = null;
@@ -184,6 +150,7 @@ export function createExplore(game) {
     // カメラはキャラを追う
     S.cam.x += (S.p.x - S.cam.x) * Math.min(1, dt * 5);
     S.cam.y += (S.p.y - S.cam.y) * Math.min(1, dt * 5);
+    S.zoom += (1 - S.zoom) * Math.min(1, dt * 3);
     S.anchorY = H * 0.66;
     // 拾う
     for (const it of f.items) if (!it.taken && Math.hypot(it.x - S.p.x, it.y - S.p.y) < 34) touch(it);
@@ -231,7 +198,7 @@ export function createExplore(game) {
     ctx.fill();
     if (S.loc === 'volcano') {
       const vx = W * 0.7 + farX * 0.5;
-      ctx.fillStyle = '#2a1a1c';
+      ctx.fillStyle = '#9a7670';
       ctx.beginPath();
       ctx.moveTo(vx - 120, hz); ctx.lineTo(vx - 24, hz - 120); ctx.lineTo(vx + 24, hz - 120); ctx.lineTo(vx + 120, hz);
       ctx.fill();
@@ -242,9 +209,9 @@ export function createExplore(game) {
       ctx.fillRect(vx - 40, hz - 160, 80, 80);
     }
     if (S.loc === 'sea') {
-      ctx.fillStyle = '#24425a';
+      ctx.fillStyle = '#7aa4bc';
       ctx.fillRect(0, hz - 34, W, 40);
-      ctx.strokeStyle = 'rgba(200,220,230,0.25)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
       ctx.lineWidth = 1.5;
       for (let i = 0; i < 6; i++) {
         const y = hz - 30 + i * 6;
@@ -306,7 +273,7 @@ export function createExplore(game) {
         for (let k = -1; k <= 1; k++) { ctx.moveTo(p.x + k * 3 * p.s, p.y); ctx.lineTo(p.x + k * 5 * p.s, p.y - (7 + d.k * 4) * p.s); }
         ctx.stroke();
       } else {
-        ctx.fillStyle = shadeMix(theme.groundDark, '#000000', 0.2);
+        ctx.fillStyle = shadeMix(theme.groundDark, '#000000', 0.12);
         ctx.beginPath();
         ctx.ellipse(p.x, p.y, 4 * p.s, 2.2 * p.s, 0, 0, TAU);
         ctx.fill();
@@ -319,11 +286,11 @@ export function createExplore(game) {
         quad(ctx, -800, b.y0, f.w + 800, b.y1);
         const pa = proj(0, b.y1), pb = proj(0, b.y0);
         const g = ctx.createLinearGradient(0, pa.y, 0, pb.y);
-        g.addColorStop(0, shadeMix(theme.water, '#000000', 0.3));
+        g.addColorStop(0, shadeMix(theme.water, '#000000', 0.18));
         g.addColorStop(1, theme.water);
         ctx.fillStyle = g;
         ctx.fill();
-        ctx.strokeStyle = S.loc === 'volcano' ? 'rgba(255,200,120,0.45)' : 'rgba(220,235,240,0.25)';
+        ctx.strokeStyle = S.loc === 'volcano' ? 'rgba(255,220,150,0.55)' : 'rgba(255,255,255,0.45)';
         ctx.lineWidth = 1.5;
         for (let i = 0; i < 4; i++) {
           const wy = b.y0 + ((i + 0.5) * (b.y1 - b.y0)) / 4;
@@ -335,9 +302,9 @@ export function createExplore(game) {
         }
         for (const gp of b.gaps) {
           quad(ctx, gp.x0 + 10, b.y0 - 8, gp.x1 - 10, b.y1 + 8);
-          ctx.fillStyle = '#6a5038';
+          ctx.fillStyle = '#a8825a';
           ctx.fill();
-          ctx.strokeStyle = '#2e2218';
+          ctx.strokeStyle = '#5e4630';
           ctx.lineWidth = 1.5;
           ctx.stroke();
           for (let y = b.y0; y < b.y1; y += 14) {
@@ -367,7 +334,7 @@ export function createExplore(game) {
       ctx.translate(p.x, p.y);
       ctx.scale(p.s, p.s * 0.55);
       ctx.rotate(-tr.ang);
-      ctx.fillStyle = g.noticed ? 'rgba(255,200,110,0.75)' : 'rgba(20,16,12,0.45)';
+      ctx.fillStyle = g.noticed ? 'rgba(200,120,30,0.8)' : 'rgba(60,44,30,0.42)';
       for (const side of [-1, 1]) {
         ctx.beginPath();
         ctx.ellipse(side * 3, side * 6, 7, 4, 0, 0, TAU);
@@ -449,7 +416,7 @@ export function createExplore(game) {
     ctx.scale(p.s, p.s);
     shadowEllipse(ctx, 0, 2, 30, 8, 0.35);
     for (const [ox, oy, r, dark] of [[-16, -12, 18, 1], [14, -12, 18, 1], [0, -22, 20, 0], [-10, -8, 14, 0], [12, -6, 13, 0]]) {
-      ctx.fillStyle = dark ? shadeMix(theme.bush, '#000000', 0.35) : theme.bush;
+      ctx.fillStyle = dark ? shadeMix(theme.bush, '#000000', 0.22) : theme.bush;
       ctx.beginPath();
       ctx.arc(ox + v * 4, oy, r, 0, TAU);
       ctx.fill();
@@ -469,10 +436,10 @@ export function createExplore(game) {
       const h = 34 * a.s;
       const g = ctx.createLinearGradient(0, a.y - h, 0, a.y);
       g.addColorStop(0, shadeMix(theme.cliff, '#ffffff', 0.1));
-      g.addColorStop(1, shadeMix(theme.cliff, '#000000', 0.45));
+      g.addColorStop(1, shadeMix(theme.cliff, '#000000', 0.3));
       ctx.fillStyle = g;
       ctx.fillRect(a.x, a.y - h, c.x - a.x, h);
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.strokeStyle = 'rgba(40,30,20,0.25)';
       ctx.lineWidth = 1;
       for (let k = Math.ceil(x0 / 30) * 30; k < x1; k += 30) {
         const q = proj(k, b.y0);
@@ -487,24 +454,24 @@ export function createExplore(game) {
     ctx.scale(p.s, p.s);
     if (it.kind === 'nest') {
       shadowEllipse(ctx, 0, 2, 26, 8, 0.35);
-      ctx.fillStyle = '#6a5034';
+      ctx.fillStyle = '#a07e54';
       ctx.beginPath();
       ctx.ellipse(0, -4, 24, 10, 0, 0, TAU);
       ctx.fill();
-      ctx.fillStyle = '#3a2a1c';
+      ctx.fillStyle = '#6e5236';
       ctx.beginPath();
       ctx.ellipse(0, -7, 16, 5, 0, 0, TAU);
       ctx.fill();
       drawEgg(ctx, it.egg.egg, 0, -22, 30, { shadow: false, wobble: Math.sin(t * 2) * 0.05, glow: 0.3 + 0.2 * Math.sin(t * 3) });
     } else if (it.kind === 'chest') {
       shadowEllipse(ctx, 0, 2, 22, 7, 0.35);
-      ctx.fillStyle = '#6a4428';
-      ctx.strokeStyle = '#2a1a10';
+      ctx.fillStyle = '#9a6a3e';
+      ctx.strokeStyle = '#4a2e18';
       ctx.lineWidth = 2;
       rr(ctx, -18, -24, 36, 24, 4);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#7a5232';
+      ctx.fillStyle = '#ad7c4a';
       rr(ctx, -18, -32, 36, 12, 6);
       ctx.fill();
       ctx.stroke();
@@ -512,7 +479,7 @@ export function createExplore(game) {
       ctx.fillRect(-3, -26, 6, 8);
       sparkle(ctx, 14, -36, 4 + Math.sin(t * 4) * 1.5, '#ffe7a0', t);
     } else if (it.kind === 'spring') {
-      ctx.fillStyle = '#4a5a5a';
+      ctx.fillStyle = '#8a9a96';
       ctx.beginPath();
       ctx.ellipse(0, -2, 34, 13, 0, 0, TAU);
       ctx.fill();
@@ -540,12 +507,12 @@ export function createExplore(game) {
     for (const w of S.weather) {
       if (kind === 'rain') {
         w.y += 620 * w.v * dt; w.x -= 80 * dt;
-        ctx.strokeStyle = 'rgba(190,210,230,0.35)';
+        ctx.strokeStyle = 'rgba(110,140,170,0.4)';
         ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.lineTo(w.x - 3, w.y + 12); ctx.stroke();
       } else if (kind === 'ash') {
         w.y += 30 * w.v * dt; w.x += Math.sin(t + w.p) * 12 * dt;
-        ctx.fillStyle = w.p > 5 ? 'rgba(255,140,70,0.75)' : 'rgba(190,180,175,0.5)';
+        ctx.fillStyle = w.p > 5 ? 'rgba(230,110,50,0.75)' : 'rgba(120,108,104,0.45)';
         ctx.fillRect(w.x, w.y, 2.4, 2.4);
       } else {
         w.y += 34 * w.v * dt; w.x += Math.sin(t * 1.4 + w.p) * 22 * dt;
@@ -565,7 +532,7 @@ export function createExplore(game) {
       // 霧
       const g = ctx.createLinearGradient(0, 0, 0, H * 0.5);
       g.addColorStop(0, 'rgba(200,220,210,0)');
-      g.addColorStop(1, 'rgba(200,220,210,0.08)');
+      g.addColorStop(1, 'rgba(240,248,244,0.18)');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H * 0.5);
     }
@@ -601,37 +568,43 @@ export function createExplore(game) {
       } else if (b.type === 'cliff') add(b.y0, () => drawCliffFace(ctx, theme, b));
     }
     for (const it of f.items) if (!it.taken) add(it.y, () => drawItem(ctx, it, proj(it.x, it.y), t));
+    const A = S.actors || {};
     for (const g of f.goblins) {
-      if (g.done) continue;
+      const isFoe = g === S.foe && (S.flash > 0 || A.showFoe);
+      if (g.done && !isFoe) continue;
       add(g.y, () => {
         const p = proj(g.x, g.y);
-        drawGoblin(ctx, goblinById(g.goblin), p.x, p.y - 44 * p.s * 0.6, 60 * p.s, { t, flip: g.face < 0 });
-        if (g.noticed) {
+        const gob = goblinById(g.goblin);
+        const size = 60 * p.s;
+        drawGoblin(ctx, gob, p.x, p.y - 0.46 * size * gob.look.size, size, { t: t + g.id, flip: g.face < 0, walking: !isFoe, pose: isFoe ? A.foePose : undefined });
+        if (g.noticed && !isFoe) {
           ctx.fillStyle = C.gold;
           ctx.beginPath();
           ctx.arc(p.x, p.y - 80 * p.s, 10 * p.s + 2, 0, TAU);
           ctx.fill();
-          ctx.fillStyle = '#1b1e25';
+          ctx.fillStyle = '#fffaf0';
           ctx.fillRect(p.x - 1.5, p.y - 80 * p.s - 6, 3, 8);
           ctx.fillRect(p.x - 1.5, p.y - 80 * p.s + 4, 3, 3);
         }
       });
     }
-    // 連れているドラゴン（後ろをついてくる）
-    const team = game.state.team.filter((k) => game.state.dex[k]);
-    team.forEach((key, i) => {
-      const tp = S.trail[Math.min(S.trail.length - 1, (i + 1) * 9)] || { x: S.p.x - 30 * (i + 1), y: S.p.y - 20, face: S.p.face };
-      add(tp.y, () => {
-        const p = proj(tp.x, tp.y);
-        drawDragonAt(ctx, genomeOf(game.state, key), p.x, p.y, 64 * p.s, { anchor: 'feet', t: t + i, level: game.state.dex[key].level, flip: tp.face < 0, speed: S.p.walking ? 1.6 : 0.7 });
+    if (!A.hide) {
+      // 連れているドラゴン（後ろをついてくる）
+      const team = game.state.team.filter((k) => game.state.dex[k]);
+      team.forEach((key, i) => {
+        const tp = S.trail[Math.min(S.trail.length - 1, (i + 1) * 9)] || { x: S.p.x - 30 * (i + 1), y: S.p.y - 20, face: S.p.face };
+        add(tp.y, () => {
+          const p = proj(tp.x, tp.y);
+          drawDragonAt(ctx, genomeOf(game.state, key), p.x, p.y, 64 * p.s, { anchor: 'feet', t: t + i, level: game.state.dex[key].level, flip: (S.foe && (S.flash > 0 || A.showFoe) ? S.p.face : tp.face) < 0, speed: S.p.walking ? 1.6 : 0.7 });
+        });
       });
-    });
-    add(S.p.y, () => { const p = proj(S.p.x, S.p.y); drawExplorer(ctx, p.x, p.y, p.s * 1.1, t, S.p.walking, S.p.face); });
+      add(S.p.y, () => { const p = proj(S.p.x, S.p.y); drawExplorer(ctx, p.x, p.y, p.s * 1.1, t, S.p.walking, S.p.face, A.playerPose); });
+    }
     objs.sort((a, b) => b.y - a.y).forEach((o) => o.fn());
     // 手前の層（速く動く草むら）
     const H = game.ui.H;
     const fx = -S.cam.x * 1.25;
-    ctx.fillStyle = shadeMix(theme.groundDark, '#000000', 0.35);
+    ctx.fillStyle = shadeMix(theme.groundDark, '#000000', 0.12);
     for (let i = -1; i < 8; i++) {
       const x = ((i * 64 + fx) % 512 + 512) % 512 - 64;
       ctx.beginPath();
@@ -645,15 +618,17 @@ export function createExplore(game) {
     const H = game.ui.H;
     const loc = locationById(S.loc);
     // 上の帯
-    ctx.fillStyle = 'rgba(14,15,20,0.72)';
+    ctx.fillStyle = C.glass;
     ctx.fillRect(0, 0, W, 64);
+    ctx.fillStyle = C.glassLine;
+    ctx.fillRect(0, 64, W, 1);
     text(ctx, loc.name, 16, 22, { size: 15, maxW: W - 16 - 120 });
     // 持ち物
     let x = 16;
     for (let i = 0; i < DATA.explore.bagMax; i++) {
       const e = S.bag[i];
       if (e) drawEgg(ctx, e.egg, x + 8, 44, 16, { shadow: false });
-      else { ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(x + 8, 44, 5.5, 7, 0, 0, TAU); ctx.stroke(); }
+      else { ctx.strokeStyle = 'rgba(70,56,40,0.3)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(x + 8, 44, 5.5, 7, 0, 0, TAU); ctx.stroke(); }
       x += 18;
     }
     iconShard(ctx, x + 16, 44, 7);
@@ -664,22 +639,22 @@ export function createExplore(game) {
     // 進み具合（右端の細い地図）
     const f = S.field;
     const mx = W - 14, my0 = 80, my1 = Math.min(H * 0.5, 300);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(250,247,240,0.75)';
     rr(ctx, mx - 5, my0, 10, my1 - my0, 5);
     ctx.fill();
     const mapY = (y) => my1 - (y / f.d) * (my1 - my0);
-    for (const it of f.items) if (!it.taken) { ctx.fillStyle = it.kind === 'nest' ? '#e8d8a0' : it.kind === 'chest' ? C.gold : '#7fc0c0'; ctx.fillRect(mx - 2 + (it.x / f.w - 0.5) * 6, mapY(it.y) - 1.5, 3, 3); }
+    for (const it of f.items) if (!it.taken) { ctx.fillStyle = it.kind === 'nest' ? '#8a6a3a' : it.kind === 'chest' ? C.gold : '#3a8a90'; ctx.fillRect(mx - 2 + (it.x / f.w - 0.5) * 6, mapY(it.y) - 1.5, 3, 3); }
     for (const g of f.goblins) if (!g.done && g.noticed) { ctx.fillStyle = C.red; ctx.fillRect(mx - 2, mapY(g.y) - 1.5, 4, 3); }
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = C.text;
     ctx.beginPath();
     ctx.arc(mx, mapY(S.p.y), 3.5, 0, TAU);
     ctx.fill();
     // ひとこと
-    if (S.msg && game.t - S.msg.t < 3.2) {
+    if (S.msg && game.t - S.msg.t < 3.2 && !(S.flash > 0)) {
       const a = Math.min(1, (3.2 - (game.t - S.msg.t)) * 2);
       ctx.globalAlpha = a;
       const bw = W - 40;
-      panel(ctx, 20, 74, bw - 14, 46, { r: 12, fill: 'rgba(14,15,20,0.82)', shadow: false });
+      panel(ctx, 20, 74, bw - 14, 46, { r: 12, fill: C.glass, stroke: C.glassLine, shadow: false });
       textBox(ctx, S.msg.str, 20 + 14, 74 + 7, bw - 14 - 28, 32, { size: 13, valign: 'middle', align: 'center', maxLines: 2 });
       ctx.globalAlpha = 1;
     }
@@ -688,17 +663,7 @@ export function createExplore(game) {
     S.stick = stick;
     const rest = { x: 84, y: H - 104 };
     const cx = stick.active ? stick.cx : rest.x, cy = stick.active ? stick.cy : rest.y;
-    ctx.fillStyle = 'rgba(10,12,16,0.35)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 52, 0, TAU);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(230,220,200,0.75)';
-    ctx.beginPath();
-    ctx.arc(cx + stick.x * 40, cy + stick.y * 40, 24, 0, TAU);
-    ctx.fill();
+    drawStick(ctx, cx, cy, stick, 52);
   }
 
   function drawSummary(ctx, t) {
@@ -723,9 +688,33 @@ export function createExplore(game) {
     button(game.ui, box.x + 20, box.y + 272, bw, 56, 'もう少し探す', back, { color: C.slate, size: 16 });
   }
 
+  // バトルの背景：探索していたフィールドをそのまま映す（暗くする幕は掛けない）
+  // o.hide: フィールドのプレイヤーとドラゴンを隠す（バトル側が描くとき）
+  // o.showFoe: 出くわしたゴブリンをその場に描く / playerPose, foePose: 勝利・失敗の動き
+  function backdrop(ctx, t, dt, o = {}) {
+    if (!S) return false;
+    battleCam(dt, o.zoom || BATTLE_ZOOM);
+    S.anchorY = game.ui.H * (o.anchor || 0.5);
+    S.actors = o;
+    drawWorld(ctx, t, dt);
+    S.actors = null;
+    return true;
+  }
+
+  // いま画面のどこにプレイヤーとゴブリンがいるか（バトルの開始位置に使う）
+  function screenPos() {
+    if (!S) return null;
+    const p = proj(S.p.x, S.p.y);
+    const g = S.foe ? proj(S.foe.x, S.foe.y) : null;
+    return { player: p, foe: g };
+  }
+
   return {
+    backdrop,
+    screenPos,
     enter(params) {
       if (params.resume && S) {
+        S.foe = null;
         applyResult(params.result);
         return;
       }
@@ -737,9 +726,19 @@ export function createExplore(game) {
       drawWorld(ctx, t, dt);
       drawHud(ctx, t);
       if (S.flash > 0) {
-        ctx.fillStyle = `rgba(10,8,8,${Math.min(1, S.flash * 2.2)})`;
-        ctx.fillRect(0, 0, W, game.ui.H);
-        if (S.pending) text(ctx, 'ゴブリンだ！', W / 2, game.ui.H / 2, { size: 24, align: 'center', color: C.gold, free: true });
+        // ゴブリンに出くわした：カメラが寄り、明るい輪が広がる（暗くはしない）
+        const k = Math.min(1, S.flash / 0.5);
+        const fp = S.foe ? proj(S.foe.x, S.foe.y) : { x: W / 2, y: game.ui.H / 2, s: 1 };
+        ctx.strokeStyle = `rgba(255,250,235,${0.9 * (1 - k)})`;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(fp.x, fp.y - 30 * fp.s, 20 + k * 260, 0, TAU);
+        ctx.stroke();
+        if (S.pending) {
+          ctx.globalAlpha = Math.min(1, S.flash * 5);
+          tagOnField(ctx, 'ゴブリンだ！', W / 2, 88);
+          ctx.globalAlpha = 1;
+        }
       }
       if (S.summary) drawSummary(ctx, t);
     },

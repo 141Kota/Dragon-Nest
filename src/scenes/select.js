@@ -73,7 +73,7 @@ export function createSelect(game) {
       const d = st.dex[k];
       const g = genomeOf(st, k);
       const idx = st.team.indexOf(k);
-      panel(ctx, x + 4, y + 4, cw - 8, ch - 8, { r: 12, fill: idx >= 0 ? 'rgba(217,162,78,0.16)' : 'rgba(255,255,255,0.05)', shadow: false, stroke: idx >= 0 ? C.gold : undefined });
+      panel(ctx, x + 4, y + 4, cw - 8, ch - 8, { r: 12, fill: idx >= 0 ? 'rgba(168,117,31,0.14)' : 'rgba(70,56,40,0.05)', shadow: false, stroke: idx >= 0 ? C.gold : undefined });
       drawDragonAt(ctx, g, x + cw / 2, y + 50, cw - 28, { t: t * 0.6 + i, level: d.level, shadow: false, aspect: 64 / (cw - 28) });
       levelBadge(ctx, x + cw / 2 - 24, y + ch - 40, d.level);
       if (idx >= 0) {
@@ -81,7 +81,7 @@ export function createSelect(game) {
         ctx.beginPath();
         ctx.arc(x + cw - 20, y + 20, 11, 0, Math.PI * 2);
         ctx.fill();
-        text(ctx, String(idx + 1), x + cw - 20, y + 20, { size: 12, align: 'center', color: '#1b1e25', free: true });
+        text(ctx, String(idx + 1), x + cw - 20, y + 20, { size: 12, align: 'center', color: '#fffaf0', free: true });
       }
       game.ui.hit(x + 4, y + 4, cw - 8, ch - 8, () => {
         if (!toggleTeam(st, k)) game.toast(`連れていけるのは${DATA.dragon.teamMax}体までです`);
@@ -140,7 +140,7 @@ export function createSelect(game) {
         const cardH = ch - 4;
         ctx.save();
         rr(ctx, 16, cy + 4, W - 32, cardH, 16);
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillStyle = 'rgba(70,52,30,0.16)';
         ctx.fill();
         rr(ctx, 16, cy, W - 32, cardH, 16);
         const g = ctx.createLinearGradient(0, cy, 0, cy + cardH);
@@ -157,18 +157,19 @@ export function createSelect(game) {
         drawLocationDecor(ctx, loc, W - 118, cy + cardH - 8, 0.65);
         // 文字を読みやすくする帯
         const sh = ctx.createLinearGradient(16, 0, W - 80, 0);
-        sh.addColorStop(0, 'rgba(10,12,16,0.55)');
-        sh.addColorStop(1, 'rgba(10,12,16,0)');
+        sh.addColorStop(0, 'rgba(253,251,246,0.88)');
+        sh.addColorStop(0.55, 'rgba(253,251,246,0.6)');
+        sh.addColorStop(1, 'rgba(253,251,246,0)');
         ctx.fillStyle = sh;
         ctx.fillRect(16, cy, W - 32, cardH);
         ctx.restore();
         const tx = 32, tw = W - 32 - 32 - 96;
         text(ctx, loc.name, tx, cy + 24, { size: 18, maxW: tw });
-        textBox(ctx, loc.desc, tx, cy + 38, tw, 36, { size: 12, color: '#d8d0c0', maxLines: 2, weight: 'normal' });
+        textBox(ctx, loc.desc, tx, cy + 38, tw, 36, { size: 12, color: C.sub, maxLines: 2, weight: 'normal' });
         const pr = dexProgress(st, loc.id);
         bar(ctx, tx, cy + cardH - 24, 110, 8, pr.found / pr.total, th.accent);
-        text(ctx, `図鑑 ${pr.found}/${pr.total}`, tx + 120, cy + cardH - 20, { size: 11, color: '#d8d0c0', maxW: tw - 120 });
-        if (ch > 140) loc.eggTable.slice(0, 2).forEach((e, k) => drawEgg(ctx, e.egg, W - 160 + k * 26, cy + 30, 24, { shadow: false }));
+        text(ctx, `図鑑 ${pr.found}/${pr.total}`, tx + 120, cy + cardH - 20, { size: 11, color: C.sub, maxW: tw - 120 });
+        loc.eggTable.slice(0, 2).forEach((e, k) => drawEgg(ctx, e.egg, W - 44 - k * 26, cy + 24, 22, { shadow: false }));
         game.ui.hit(16, cy, W - 32, cardH, () => {
           if (!st.team.length && Object.keys(st.dex).length) game.toast('ドラゴンなしで出発します');
           game.go('explore', { loc: loc.id });

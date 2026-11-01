@@ -1,7 +1,8 @@
 // 防衛: 卵を守りながら、押し寄せるゴブリンをタップで追い払う（忙しさと手際）
 // 器用さ → タップの当たる広さ / 力 → 一撃で倒しやすい / 速さ → ドラゴンが自動で攻撃する間隔
 import { W } from '../ui.js';
-import { text, drawGoblin, drawEgg, C } from '../draw.js';
+import { text, drawEgg, C } from '../draw.js';
+import { drawGoblin } from '../figures.js';
 import { drawDragonAt } from '../dragon.js';
 import { arenaFloor } from '../scenes/battle.js';
 import { statK } from '../logic.js';
@@ -98,12 +99,12 @@ export default function create(input, env) {
       ui.press(geo.x, geo.y, geo.w, geo.h, tap);
       const ex = geo.x + geo.w * 0.5, ey = geo.y + geo.h * 0.55;
       // 卵の台
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillStyle = 'rgba(250,247,240,0.8)';
       ctx.beginPath(); ctx.ellipse(ex, ey + 22, 46, 15, 0, 0, TAU); ctx.fill();
       drawEgg(ctx, 'forest_common', ex, ey, 56, { wobble: S.gobs.some((g) => !g.flee && Math.hypot(g.x - 0.5, g.y - 0.55) < 0.15) ? Math.sin(t * 20) * 0.1 : 0 });
       // 卵の残り（奪われるたびに減る表示）
       for (let i = 0; i < 3; i++) {
-        ctx.fillStyle = i < S.stolen ? 'rgba(200,90,70,0.9)' : 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = i < S.stolen ? 'rgba(178,74,53,0.9)' : 'rgba(70,56,40,0.15)';
         ctx.beginPath(); ctx.arc(ex - 16 + i * 16, ey + 48, 5, 0, TAU); ctx.fill();
       }
       // ドラゴン（卵のまわり）
@@ -121,9 +122,9 @@ export default function create(input, env) {
         const sx = geo.x + gb.x * geo.w, sy = geo.y + gb.y * geo.h;
         ctx.save();
         ctx.beginPath(); ctx.rect(geo.x, geo.y, geo.w, geo.h); ctx.clip();
-        drawGoblin(ctx, input.goblin, sx, sy - 20, 40, { t: t + gb.id, hurt: gb.hurt > 0, flip: gb.face < 0, egg: gb.flee ? 'forest_common' : null });
+        drawGoblin(ctx, input.goblin, sx, sy - 40 * 0.46 * input.goblin.look.size, 40, { t: t + gb.id, hurt: gb.hurt > 0, flip: gb.face < 0, egg: gb.flee ? 'forest_common' : null, walking: !(gb.hurt > 0) });
         ctx.restore();
-        if (gb.max > 1 && !gb.flee) for (let k = 0; k < gb.max; k++) { ctx.fillStyle = k < gb.hp ? '#e0907a' : 'rgba(0,0,0,0.4)'; ctx.fillRect(sx - 10 + k * 12, sy - 52, 9, 4); }
+        if (gb.max > 1 && !gb.flee) for (let k = 0; k < gb.max; k++) { ctx.fillStyle = k < gb.hp ? '#c45a44' : 'rgba(70,56,40,0.3)'; ctx.fillRect(sx - 10 + k * 12, sy - 52, 9, 4); }
       }
       for (const f of S.fx) {
         ctx.strokeStyle = f.tap ? `rgba(255,240,200,${0.6 * (1 - f.t / 0.5)})` : `rgba(255,200,120,${1 - f.t / 0.5})`;

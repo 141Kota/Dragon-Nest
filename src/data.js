@@ -215,12 +215,12 @@ export const DATA = {
       id: 'forest', name: 'ささやきの森', desc: '霧の立つ深い森。苔むした岩と小川がある',
       weather: 'leaves',
       theme: {
-        skyTop: '#1f3a3a', skyBottom: '#56735f', far: '#2c4a44', mid: '#355a45', ground: '#4c6b3e', groundDark: '#2f4a2c',
-        path: '#7a7052', obstacle: 'tree', obMain: '#2f5a3a', obDark: '#1d3a26', obTrunk: '#5a4232', water: '#3f6f7a', cliff: '#5a5444', bush: '#2f5a34', accent: '#9fbf6a',
+        skyTop: '#a3c4bd', skyBottom: '#dde7d2', far: '#93b2a4', mid: '#7f9f83', ground: '#9cb878', groundDark: '#7c9a5d',
+        path: '#cdbf94', obstacle: 'tree', obMain: '#5f8f5a', obDark: '#41693f', obTrunk: '#7a5a40', water: '#6fa8b4', cliff: '#a39780', bush: '#6c9a5c', accent: '#4f7a2e',
       },
       field: { barriers: ['river', 'bush', 'cliff'] },
       eggTable: [{ egg: 'forest_common', w: 72 }, { egg: 'forest_rare', w: 24 }, { egg: 'star', w: 4 }],
-      goblins: [{ id: 'sneak', w: 50 }, { id: 'brute', w: 25 }, { id: 'shaman', w: 25 }],
+      goblins: [{ id: 'sneak', w: 40 }, { id: 'brute', w: 20 }, { id: 'shaman', w: 20 }, { id: 'shield', w: 20 }],
       pool: {
         lineage: [{ id: 'quad', w: 3 }, { id: 'biped', w: 2 }, { id: 'wisp', w: 2, rare: true }],
         horns: [{ id: 'branch', w: 3 }, { id: 'nub', w: 2 }],
@@ -236,12 +236,12 @@ export const DATA = {
       id: 'sea', name: 'しおかぜの浜', desc: '波が打ち寄せる浜辺。岩場と潮だまりが続く',
       weather: 'rain',
       theme: {
-        skyTop: '#1d2f45', skyBottom: '#5f7a8a', far: '#2a4560', mid: '#3a5a6a', ground: '#a08f6a', groundDark: '#6a5a42',
-        path: '#c4b48a', obstacle: 'rock', obMain: '#5a6670', obDark: '#343c44', obTrunk: '#7a8a90', water: '#2f5f7a', cliff: '#6a6458', bush: '#4a6a5a', accent: '#8fc0d0',
+        skyTop: '#a0c2d8', skyBottom: '#e2ecee', far: '#90b0c4', mid: '#9cb9bc', ground: '#d9caa2', groundDark: '#b9a77e',
+        path: '#ece0bf', obstacle: 'rock', obMain: '#8f9ba4', obDark: '#65717b', obTrunk: '#9aa8ae', water: '#5f9cb8', cliff: '#a99f8a', bush: '#7aa08e', accent: '#2f6a8a',
       },
       field: { barriers: ['river', 'cliff', 'river'] },
       eggTable: [{ egg: 'sea_common', w: 72 }, { egg: 'sea_rare', w: 24 }, { egg: 'star', w: 4 }],
-      goblins: [{ id: 'sneak', w: 40 }, { id: 'shaman', w: 35 }, { id: 'brute', w: 25 }],
+      goblins: [{ id: 'sneak', w: 30 }, { id: 'shaman', w: 30 }, { id: 'brute', w: 20 }, { id: 'shield', w: 20 }],
       pool: {
         lineage: [{ id: 'serpent', w: 3 }, { id: 'hydra', w: 2, rare: true }, { id: 'wisp', w: 2 }],
         horns: [{ id: 'single', w: 3 }, { id: 'curl', w: 2, rare: true }],
@@ -257,12 +257,12 @@ export const DATA = {
       id: 'volcano', name: 'けむりの火山', desc: '灰の舞う黒い山。溶岩の川と崖がある',
       weather: 'ash',
       theme: {
-        skyTop: '#2a1a1e', skyBottom: '#7a4a3a', far: '#3a2228', mid: '#4a2e2a', ground: '#5a4a44', groundDark: '#352a28',
-        path: '#7a6458', obstacle: 'crag', obMain: '#4a3e3c', obDark: '#2a2224', obTrunk: '#ff7a3d', water: '#c8502a', cliff: '#3e3434', bush: '#5a4038', accent: '#ff9a5a',
+        skyTop: '#d2a898', skyBottom: '#f0dcc8', far: '#b98c82', mid: '#a47e72', ground: '#b29a8c', groundDark: '#8f766a',
+        path: '#d0b9a6', obstacle: 'crag', obMain: '#82706a', obDark: '#5e4e4e', obTrunk: '#ff7a3d', water: '#d8602e', cliff: '#8a7674', bush: '#9a7a68', accent: '#b84a2a',
       },
       field: { barriers: ['cliff', 'river', 'cliff'] },
       eggTable: [{ egg: 'volcano_common', w: 70 }, { egg: 'volcano_rare', w: 25 }, { egg: 'star', w: 5 }],
-      goblins: [{ id: 'brute', w: 45 }, { id: 'sneak', w: 25 }, { id: 'shaman', w: 30 }],
+      goblins: [{ id: 'brute', w: 35 }, { id: 'sneak', w: 20 }, { id: 'shaman', w: 25 }, { id: 'shield', w: 20 }],
       pool: {
         lineage: [{ id: 'wyvern', w: 3 }, { id: 'hydra', w: 2 }, { id: 'biped', w: 2, rare: true }],
         horns: [{ id: 'great', w: 3 }, { id: 'curl', w: 2 }],
@@ -290,8 +290,8 @@ export const DATA = {
   // battles: 使うバトルと重み、quirk はバトル内の癖（各バトルのファイルが読む）
   goblins: [
     {
-      id: 'sneak', name: 'こそ泥ゴブリン',
-      look: { skin: '#7f9a5a', skinDark: '#4a5f34', cloth: '#4f3f5f', size: 0.9, ear: 1.2, hood: true, gear: 'sack' },
+      id: 'sneak', name: '足の速いゴブリン',
+      look: { build: 'slim', skin: '#86a05e', skinDark: '#4f6538', cloth: '#5a4a6a', legs: '#4e4438', size: 0.92, ear: 1.25, hood: true, gear: 'sack' },
       battles: [
         { id: 'chase', w: 4, quirk: { speed: 1.15, jink: 1.4 } },
         { id: 'trap', w: 2, quirk: { size: 3, scramble: 3 } },
@@ -301,8 +301,8 @@ export const DATA = {
       ],
     },
     {
-      id: 'brute', name: '力持ちゴブリン',
-      look: { skin: '#8f9a4a', skinDark: '#5a6230', cloth: '#7a3f2e', size: 1.15, ear: 0.9, hood: false, gear: 'club' },
+      id: 'brute', name: '斧持ちゴブリン',
+      look: { build: 'broad', skin: '#93a04e', skinDark: '#5d6632', cloth: '#7e4430', legs: '#4a3a2e', size: 1.12, ear: 0.95, hood: false, gear: 'club' },
       battles: [
         { id: 'chase', w: 1, quirk: { speed: 0.9, jink: 0.6 } },
         { id: 'trap', w: 2, quirk: { size: 3, scramble: 4 } },
@@ -312,14 +312,25 @@ export const DATA = {
       ],
     },
     {
-      id: 'shaman', name: 'まじない師ゴブリン',
-      look: { skin: '#6f8a7a', skinDark: '#3f5a4a', cloth: '#3a4a6a', size: 0.95, ear: 1.4, hood: true, gear: 'drum' },
+      id: 'shaman', name: '罠師ゴブリン',
+      look: { build: 'robe', skin: '#76927e', skinDark: '#44604f', cloth: '#45567a', legs: '#3e4450', size: 0.96, ear: 1.4, hood: true, gear: 'drum' },
       battles: [
         { id: 'chase', w: 1, quirk: { speed: 1.0, jink: 2.0 } },
         { id: 'trap', w: 3, quirk: { size: 4, scramble: 4 } },
         { id: 'surround', w: 2, quirk: { rocks: 9, double: 0.25 } },
         { id: 'defense', w: 1, quirk: { count: 8, hp: 1, speed: 1.0 } },
         { id: 'drum', w: 4, quirk: { bpm: 104, offbeat: 0.3 } },
+      ],
+    },
+    {
+      id: 'shield', name: '盾持ちゴブリン',
+      look: { build: 'stocky', skin: '#8a9a62', skinDark: '#56643a', cloth: '#6a5a44', legs: '#4a4034', size: 1.02, ear: 1.05, hood: false, gear: 'shield' },
+      battles: [
+        { id: 'chase', w: 1, quirk: { speed: 0.85, jink: 0.8 } },
+        { id: 'trap', w: 2, quirk: { size: 3, scramble: 5 } },
+        { id: 'surround', w: 4, quirk: { rocks: 11, double: 0.1 } },
+        { id: 'defense', w: 3, quirk: { count: 7, hp: 3, speed: 0.8 } },
+        { id: 'drum', w: 1, quirk: { bpm: 92, offbeat: 0.1 } },
       ],
     },
   ],

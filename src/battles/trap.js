@@ -113,15 +113,15 @@ export default function create(input, env) {
         const on = board[i];
         rr(ctx, -cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, 10);
         const gr = ctx.createLinearGradient(0, -cell / 2, 0, cell / 2);
-        gr.addColorStop(0, on ? '#7a3a2e' : '#3a4440');
-        gr.addColorStop(1, on ? '#4a1f18' : '#252c2a');
+        gr.addColorStop(0, on ? '#c46a4e' : '#c4ccc4');
+        gr.addColorStop(1, on ? '#94402c' : '#95a098');
         ctx.fillStyle = gr;
         ctx.fill();
-        ctx.strokeStyle = on ? 'rgba(255,140,90,0.8)' : 'rgba(255,255,255,0.12)';
+        ctx.strokeStyle = on ? 'rgba(255,170,120,0.9)' : 'rgba(70,56,40,0.3)';
         ctx.lineWidth = 2;
         ctx.stroke();
         // 罠の絵: とげ（作動中）/ ひらいた輪（外れた）
-        ctx.strokeStyle = on ? '#ffb08a' : 'rgba(200,210,200,0.35)';
+        ctx.strokeStyle = on ? '#ffd0b0' : 'rgba(60,70,64,0.5)';
         ctx.fillStyle = on ? `rgba(255,120,70,${0.5 + 0.3 * Math.sin(t * 5 + i)})` : 'rgba(0,0,0,0)';
         ctx.lineWidth = 2.5;
         const rad = cell * 0.22;

@@ -6,24 +6,29 @@ import { W } from './ui.js';
 const TAU = Math.PI * 2;
 export const FONT = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif';
 
-// 落ち着いた深い色
+// 色：落ち着いた深みのある彩度のまま、画面全体は明るく。
+// 明るさの下限：背景・パネルは中間より明るい色（明度 70% 以上）を基本にし、暗い色は影・輪郭・夜の場所だけに使う。
+// 文字は背景に対して十分なコントラスト（text は bg に対して 10:1 以上、sub は 5:1 以上）をとる。
 export const C = {
-  bg: '#1b1e25',
-  bg2: '#23262e',
-  panel: '#2b2e37',
-  panel2: '#353843',
-  line: 'rgba(255,255,255,0.09)',
-  text: '#ece4d4',
-  sub: '#a8a093',
-  dim: '#7b756c',
-  gold: '#d9a24e',
-  amber: '#b07a36',
-  teal: '#3d7670',
-  rust: '#9a4d34',
-  plum: '#5d4a72',
-  moss: '#566f3e',
-  slate: '#4a5060',
-  red: '#c45a44',
+  bg: '#e9e3d6',
+  bg2: '#f3eee4',
+  panel: '#f7f3ea',
+  panel2: '#fdfbf6',
+  line: 'rgba(70,56,40,0.16)',
+  text: '#2b2722',
+  sub: '#5f574d',
+  dim: '#857c70',
+  gold: '#a8751f',
+  amber: '#a8702e',
+  teal: '#3a7069',
+  rust: '#a2502f',
+  plum: '#6a5684',
+  moss: '#58733f',
+  slate: '#5a6273',
+  red: '#b24a35',
+  // 地図の上などに置く、半透明の明るい板
+  glass: 'rgba(250,247,240,0.9)',
+  glassLine: 'rgba(70,56,40,0.18)',
 };
 export const INK = C.text;
 
@@ -53,6 +58,9 @@ export function measure(ctx, str, size, weight) {
 }
 
 // 1行の文字。maxW を超えるときは文字を小さくする（最小 minSize）
+// フィールドの上に直接文字を置くとき（バトル中）は、文字のまわりに明るいふちを付けて読みやすくする
+export const HALO = { on: false };
+
 export function text(ctx, str, x, y, o = {}) {
   str = String(str);
   let size = o.size || 16;
@@ -61,10 +69,11 @@ export function text(ctx, str, x, y, o = {}) {
   ctx.font = fontOf(size, o.weight);
   ctx.textAlign = o.align || 'left';
   ctx.textBaseline = 'middle';
-  if (o.stroke) {
+  const halo = !o.stroke && HALO.on && !o.noHalo;
+  if (o.stroke || halo) {
     ctx.lineJoin = 'round';
-    ctx.lineWidth = o.strokeW || 4;
-    ctx.strokeStyle = o.stroke;
+    ctx.lineWidth = o.strokeW || (halo ? 3.5 : 4);
+    ctx.strokeStyle = o.stroke || 'rgba(253,251,246,0.92)';
     ctx.strokeText(str, x, y);
   }
   ctx.fillStyle = o.color || C.text;
@@ -124,7 +133,7 @@ export function textBox(ctx, str, x, y, w, h, o = {}) {
 export function panel(ctx, x, y, w, h, o = {}) {
   ctx.save();
   if (o.shadow !== false) {
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.fillStyle = 'rgba(70,52,30,0.16)';
     rr(ctx, x, y + (o.depth || 4), w, h, o.r ?? 14);
     ctx.fill();
   }
@@ -162,22 +171,24 @@ export function hexA(hex, a) {
 export function button(ui, x, y, w, h, label, onTap, o = {}) {
   const ctx = ui.ctx;
   h = Math.max(44, h);
-  const col = o.disabled ? '#4a4a50' : o.color || C.amber;
+  const col = o.disabled ? '#cfc8bb' : o.color || C.amber;
+  const down = !o.disabled && onTap && ui.held(x, y, w, h + 3);
   ctx.save();
-  ctx.fillStyle = shade(col, -0.45);
+  ctx.fillStyle = shade(col, -0.35);
   rr(ctx, x, y + 3, w, h, o.r ?? 12);
   ctx.fill();
+  if (down) ctx.translate(0, 2);
   const g = ctx.createLinearGradient(0, y, 0, y + h);
   g.addColorStop(0, shade(col, 0.12));
   g.addColorStop(1, shade(col, -0.12));
   ctx.fillStyle = g;
   rr(ctx, x, y, w, h, o.r ?? 12);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
   ctx.lineWidth = 1.2;
   rr(ctx, x + 0.5, y + 0.5, w - 1, h - 1, o.r ?? 12);
   ctx.stroke();
-  const tc = o.disabled ? '#8a857c' : o.textColor || '#f6efe2';
+  const tc = o.disabled ? '#6f685e' : o.textColor || '#fffaf0';
   let size = Math.min(o.size || 17, h / 2);
   if (o.sub) {
     // 2行: 上下の余白 + 行間をそれぞれ文字の高さの半分以上
@@ -187,15 +198,15 @@ export function button(ui, x, y, w, h, label, onTap, o = {}) {
     const pad = (h - total - sub * 0.3) / 2;
     const iconW = o.icon ? 24 : 0;
     const cx = x + w / 2 + iconW / 2;
-    text(ctx, label, cx, y + pad + size / 2, { size, align: 'center', color: tc, maxW: w - size - iconW });
-    text(ctx, o.sub, cx, y + h - pad - sub / 2, { size: sub, align: 'center', color: o.disabled ? tc : 'rgba(246,239,226,0.8)', maxW: w - size - iconW, weight: 'normal' });
+    text(ctx, label, cx, y + pad + size / 2, { size, align: 'center', noHalo: true, color: tc, maxW: w - size - iconW });
+    text(ctx, o.sub, cx, y + h - pad - sub / 2, { size: sub, align: 'center', color: o.disabled ? tc : 'rgba(255,250,240,0.88)', maxW: w - size - iconW, weight: 'normal', noHalo: true });
     if (o.icon) o.icon(x + w / 2 - Math.min(w - size - iconW, measure(ctx, label, size)) / 2 - 2, y + pad + size / 2);
   } else {
     const iconW = o.icon ? 26 : 0;
     const maxW = w - size - iconW;
     const tw = Math.min(maxW, measure(ctx, label, size));
     const cx = x + w / 2 + iconW / 2;
-    text(ctx, label, cx, y + h / 2, { size, align: 'center', color: tc, maxW });
+    text(ctx, label, cx, y + h / 2, { size, align: 'center', noHalo: true, color: tc, maxW });
     if (o.icon) o.icon(cx - tw / 2 - 14, y + h / 2);
   }
   ctx.restore();
@@ -204,7 +215,7 @@ export function button(ui, x, y, w, h, label, onTap, o = {}) {
   else if (o.onDisabled) ui.hit(x, y, w, h + 3, o.onDisabled, o.clip);
 }
 
-export function bar(ctx, x, y, w, h, ratio, col, back = 'rgba(0,0,0,0.35)') {
+export function bar(ctx, x, y, w, h, ratio, col, back = 'rgba(70,56,40,0.16)') {
   rr(ctx, x, y, w, h, h / 2);
   ctx.fillStyle = back;
   ctx.fill();
@@ -219,7 +230,7 @@ export function bar(ctx, x, y, w, h, ratio, col, back = 'rgba(0,0,0,0.35)') {
 }
 
 export function shadowEllipse(ctx, x, y, rx, ry, a = 0.3) {
-  ctx.fillStyle = `rgba(0,0,0,${a})`;
+  ctx.fillStyle = `rgba(40,30,20,${a * 0.8})`;
   ctx.beginPath();
   ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
   ctx.fill();
@@ -286,7 +297,7 @@ export function drawEgg(ctx, eggId, x, y, h, o = {}) {
   };
   path();
   if (o.silhouette) {
-    ctx.fillStyle = '#14161c';
+    ctx.fillStyle = '#3a3f4b';
     ctx.fill();
     ctx.restore();
     return;
@@ -336,7 +347,7 @@ export function drawEgg(ctx, eggId, x, y, h, o = {}) {
   }
   path();
   ctx.lineWidth = Math.max(1.5, h * 0.035);
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.strokeStyle = 'rgba(40,28,18,0.55)';
   ctx.stroke();
   ctx.restore();
 }
@@ -344,107 +355,6 @@ export function drawEgg(ctx, eggId, x, y, h, o = {}) {
 export function rarityStars(ctx, eggId, x, y, size = 10) {
   const n = DATA.rarities[DATA.eggs[eggId].rarity].stars;
   for (let i = 0; i < n; i++) sparkle(ctx, x + (i - (n - 1) / 2) * size * 1.6, y, size * 0.7, '#f2b33d');
-}
-
-// ---------- ゴブリン ----------
-export function drawGoblin(ctx, gob, x, y, size, o = {}) {
-  const L = gob.look;
-  const t = o.t || 0;
-  const s = (size / 100) * L.size;
-  ctx.save();
-  shadowEllipse(ctx, x, y + 46 * s, 42 * s, 9 * s);
-  ctx.translate(x + (o.shake ? Math.sin(t * 60) * 4 : 0), y + Math.sin(t * 4) * 2 * s);
-  ctx.scale(s * (o.flip ? -1 : 1), s);
-  ctx.lineJoin = 'round';
-  const out = (fill, lw = 4) => { ctx.lineWidth = lw; ctx.strokeStyle = '#3d3a2a'; ctx.stroke(); ctx.fillStyle = fill; ctx.fill(); };
-  // 足
-  for (const fx of [-16, 14]) {
-    ctx.beginPath();
-    ctx.ellipse(fx, 42, 12, 7, 0, 0, TAU);
-    out(L.skinDark);
-  }
-  // からだ（服）
-  ctx.beginPath();
-  ctx.moveTo(-30, 40);
-  ctx.quadraticCurveTo(-34, 0, 0, -4);
-  ctx.quadraticCurveTo(34, 0, 30, 40);
-  ctx.closePath();
-  out(L.cloth);
-  // 耳
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(side * 22, -34);
-    ctx.quadraticCurveTo(side * (44 + 14 * L.ear), -48 - 6 * L.ear, side * (52 + 12 * L.ear), -30 + Math.sin(t * 5 + side) * 3);
-    ctx.quadraticCurveTo(side * 38, -22, side * 22, -20);
-    ctx.closePath();
-    out(L.skin);
-  }
-  // 頭
-  ctx.beginPath();
-  ctx.ellipse(0, -28, 28, 25, 0, 0, TAU);
-  out(L.skin);
-  if (L.hood) {
-    ctx.beginPath();
-    ctx.ellipse(0, -36, 30, 20, 0, Math.PI, TAU);
-    ctx.quadraticCurveTo(10, -66, -14, -60);
-    ctx.closePath();
-    out(L.cloth, 3.5);
-  } else {
-    ctx.fillStyle = L.skinDark;
-    ctx.beginPath();
-    ctx.ellipse(0, -46, 12, 5, 0, 0, TAU);
-    ctx.fill();
-  }
-  // 顔
-  const hurt = o.hurt;
-  ctx.fillStyle = '#2b2620';
-  for (const ex of [-10, 10]) {
-    ctx.beginPath();
-    if (hurt) { ctx.lineWidth = 3; ctx.strokeStyle = '#2b2620'; ctx.moveTo(ex - 5, -32); ctx.lineTo(ex + 5, -26); ctx.moveTo(ex + 5, -32); ctx.lineTo(ex - 5, -26); ctx.stroke(); } else { ctx.ellipse(ex, -29, 4, 5.5, 0, 0, TAU); ctx.fill(); }
-  }
-  ctx.fillStyle = '#fff';
-  if (!hurt) for (const ex of [-9, 11]) { ctx.beginPath(); ctx.arc(ex, -31, 1.6, 0, TAU); ctx.fill(); }
-  ctx.beginPath();
-  ctx.ellipse(0, -19, 7, 5, 0, 0, TAU);
-  out(L.skinDark, 2.5);
-  ctx.strokeStyle = '#2b2620';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(-9, -9);
-  ctx.quadraticCurveTo(0, hurt ? -12 : -4, 9, -9);
-  ctx.stroke();
-  // 持ち物（種類ごとに違う形）
-  if (L.gear === 'sack' && !o.egg) {
-    ctx.beginPath();
-    ctx.ellipse(-30, 14, 15, 18, -0.3, 0, TAU);
-    out('#8a7350', 3);
-  } else if (L.gear === 'club') {
-    ctx.save();
-    ctx.translate(30, 10);
-    ctx.rotate(-0.5 + Math.sin(t * 3) * 0.1);
-    ctx.beginPath();
-    ctx.moveTo(-4, 10); ctx.lineTo(-7, -34); ctx.quadraticCurveTo(0, -46, 7, -34); ctx.lineTo(4, 10);
-    ctx.closePath();
-    out('#6a4a32', 3);
-    ctx.restore();
-  } else if (L.gear === 'drum') {
-    ctx.beginPath();
-    ctx.ellipse(0, 26, 20, 9, 0, 0, TAU);
-    ctx.rect(-20, 26, 40, 14);
-    out('#7a3a2a', 3);
-    ctx.beginPath();
-    ctx.ellipse(0, 26, 20, 8, 0, 0, TAU);
-    out('#d8c49a', 2.5);
-  }
-  // 卵をかかえる
-  if (o.egg) drawEgg(ctx, o.egg, 0, 14, 40, { shadow: false, wobble: Math.sin(t * 6) * 0.08 });
-  // うで
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(side * 18, 18, 9, 7, side * 0.6, 0, TAU);
-    out(L.skin, 3);
-  }
-  ctx.restore();
 }
 
 // ---------- アイコン ----------
@@ -529,15 +439,15 @@ export function drawFacility(ctx, look, x, y, s, level, t) {
   if (level <= 0) {
     // 建設予定地
     ctx.setLineDash([6, 5]);
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = 'rgba(80,62,40,0.55)';
     ctx.lineWidth = 2.5;
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath();
     ctx.ellipse(0, 0, 40, 16, 0, 0, TAU);
     ctx.fill();
     ctx.stroke();
     ctx.setLineDash([]);
-    text(ctx, '+', 0, -2, { size: 24, align: 'center', color: '#e6dccb', free: true });
+    text(ctx, '+', 0, -2, { size: 24, align: 'center', color: '#5f574d', free: true });
     ctx.restore();
     return;
   }
@@ -646,30 +556,57 @@ export function controlIcon(ctx, kind, x, y, s = 1, t = 0) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   if (kind === 'stick') {
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillStyle = 'rgba(70,56,40,0.1)';
+    ctx.strokeStyle = 'rgba(70,56,40,0.45)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(0, 0, 22, 0, TAU);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#e6dccb';
+    ctx.fillStyle = '#6a5e50';
     ctx.beginPath();
     ctx.arc(Math.cos(t * 2) * 10, Math.sin(t * 2) * 10, 10, 0, TAU);
     ctx.fill();
   } else {
     // 指でタップ
     const k = (Math.sin(t * 5) + 1) / 2;
-    ctx.strokeStyle = `rgba(255,230,180,${0.3 + 0.5 * (1 - k)})`;
+    ctx.strokeStyle = `rgba(168,117,31,${0.3 + 0.5 * (1 - k)})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(0, -10, 8 + k * 10, 0, TAU);
     ctx.stroke();
-    ctx.fillStyle = '#e6dccb';
+    ctx.fillStyle = '#6a5e50';
     rr(ctx, -7, -12 + k * 3, 14, 30, 7);
     ctx.fill();
     rr(ctx, -16, 6 + k * 3, 32, 22, 10);
     ctx.fill();
   }
   ctx.restore();
+}
+
+// 仮想スティック（明るい半透明の輪）
+export function drawStick(ctx, cx, cy, stick, R = 52) {
+  ctx.fillStyle = 'rgba(250,247,240,0.45)';
+  ctx.strokeStyle = 'rgba(70,56,40,0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(253,251,246,0.95)';
+  ctx.strokeStyle = 'rgba(70,56,40,0.45)';
+  ctx.beginPath();
+  ctx.arc(cx + stick.x * R * 0.77, cy + stick.y * R * 0.77, R * 0.46, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+}
+
+// フィールドの上に置く短い札（明るい板に濃い文字）
+export function tagOnField(ctx, str, x, y, o = {}) {
+  const size = o.size || 18;
+  const w = Math.min(o.maxW || W - 40, measure(ctx, str, size) + size * 2);
+  const h = size * 2.2;
+  panel(ctx, x - w / 2, y, w, h, { r: h / 2, fill: C.glass, stroke: C.glassLine });
+  text(ctx, str, x, y + h / 2, { size, align: 'center', color: o.color || C.text, maxW: w - size });
+  return h;
 }
